@@ -62,6 +62,7 @@ class BuildConfigTests(unittest.TestCase):
 
         self.assertEqual(contract["HeadlessEnvironment"], "YUANJIAN_HEADLESS")
         self.assertEqual(contract["HeadlessValue"], "1")
+        self.assertEqual(contract["DefaultView"], "today")
 
 
 if __name__ == "__main__":

@@ -6,11 +6,13 @@ param(
 $ErrorActionPreference = "Stop"
 $headlessEnvironment = "YUANJIAN_HEADLESS"
 $headlessValue = "1"
+$defaultView = "today"
 
 if ($Describe) {
     [pscustomobject]@{
         HeadlessEnvironment = $headlessEnvironment
         HeadlessValue = $headlessValue
+        DefaultView = $defaultView
     } | ConvertTo-Json -Compress
     exit 0
 }
@@ -59,7 +61,7 @@ try {
     $runtime = Get-Content -Raw -Encoding UTF8 -LiteralPath $runtimeFile | ConvertFrom-Json
     $headers = @{ "X-YuanJian-Token" = $runtime.token }
     $homeResponse = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 -Uri "http://127.0.0.1:$($runtime.port)/"
-    if ($homeResponse.StatusCode -ne 200 -or -not $homeResponse.Content.Contains('data-view="cognition"')) {
+    if ($homeResponse.StatusCode -ne 200 -or -not $homeResponse.Content.Contains('data-view="today"')) {
         throw "Packaged local UI did not pass the home-page check"
     }
     if ($homeResponse.Content.Contains("https://")) {
@@ -87,7 +89,7 @@ try {
         Address = $listeners[0].LocalAddress
         HomeStatus = $homeResponse.StatusCode
         RemoteScripts = $false
-        DefaultView = "cognition"
+        DefaultView = $defaultView
         LocalFallback = $cognition.provider
         SecondInstanceExitCode = $second.ExitCode
         Shutdown = $shutdown.status

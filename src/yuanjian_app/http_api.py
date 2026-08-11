@@ -66,8 +66,19 @@ def create_server(host, port, token, services):
         def _authorized(self):
             return self.headers.get("X-YuanJian-Token") == token
 
+        def _discard_small_request_body(self):
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except (TypeError, ValueError):
+                return
+            if 0 < length <= 65536:
+                self.rfile.read(length)
+
         def _require_api_access(self):
             if not self._authorized():
+                # On Windows, closing a response while request bytes remain unread can
+                # reset the loopback connection before the client receives the 403.
+                self._discard_small_request_body()
                 self._error(403, "forbidden", "本次操作没有有效的本机会话令牌")
                 return False
             return True

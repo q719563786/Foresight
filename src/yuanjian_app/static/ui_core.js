@@ -23,10 +23,19 @@
     ok: '正常', error: '待重试', paused: '已暂停', stale: '内容陈旧',
     open: '进行中', resolved: '已结算', low: '低', medium: '中', high: '高'
   });
+  const categories = Object.freeze({
+    health: '健康', finance: '金融', employment: '就业', safety: '安全',
+    policy: '政策', technology: '科技', general: '综合'
+  });
+  const sourceKinds = Object.freeze({
+    rss: 'RSS / Atom', html_list: '公开网页列表', gdelt: 'GDELT 全球新闻索引'
+  });
 
   function evidenceLabel(value) { return evidence[value] || String(value || '证据待确认'); }
   function trendLabel(value) { return trends[value] || String(value || '趋势未知'); }
   function statusLabel(value) { return statuses[value] || String(value || '状态未知'); }
+  function categoryLabel(value) { return categories[value] || String(value || '综合'); }
+  function sourceKindLabel(value) { return sourceKinds[value] || String(value || '公开来源'); }
 
   function formatLocalTime(value, now = new Date(), offsetMinutes = -new Date().getTimezoneOffset()) {
     if (!value) return '时间未知';
@@ -83,7 +92,7 @@
   }
 
   return Object.freeze({
-    evidenceLabel, trendLabel, statusLabel, formatLocalTime,
+    evidenceLabel, trendLabel, statusLabel, categoryLabel, sourceKindLabel, formatLocalTime,
     buildQuery, applyMetricFilter, pageRange, movePage, sourceHealthLabel
   });
 });

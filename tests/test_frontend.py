@@ -50,6 +50,11 @@ const ui = require({str(self.ui_core_path)!r});
             """
 assert.equal(ui.evidenceLabel('E2'), 'E2 · 多源互证');
 assert.equal(ui.trendLabel('low_sample'), '样本积累中');
+assert.equal(ui.categoryLabel('employment'), '就业');
+assert.equal(ui.categoryLabel('general'), '综合');
+assert.equal(ui.sourceKindLabel('rss'), 'RSS / Atom');
+assert.equal(ui.sourceKindLabel('html_list'), '公开网页列表');
+assert.equal(ui.sourceKindLabel('gdelt'), 'GDELT 全球新闻索引');
 assert.equal(ui.statusLabel('active'), '有效');
 assert.equal(ui.statusLabel('error'), '待重试');
 assert.equal(
