@@ -92,6 +92,22 @@ class NotificationTests(unittest.TestCase):
         marked = service.mark_read(notifications[0]["notification_id"])
         self.assertEqual(marked["status"], "read")
 
+    def test_notification_page_filters_and_mark_all_read_is_idempotent(self):
+        first = self.service.consider(self.impact(), "第一条")
+        second_impact = {**self.impact(evidence_hash="hash-2"), "cluster_id": "C-2", "impact_id": "P-2"}
+        self.service.consider(second_impact, "第二条")
+        self.service.mark_read(first["notification_id"])
+
+        unread = self.service.list_page(limit=1, offset=0, status="unread")
+
+        self.assertEqual(unread["total"], 1)
+        self.assertEqual(unread["items"][0]["reason"], "第二条")
+        self.assertEqual(self.service.mark_all_read()["updated"], 1)
+        self.assertEqual(self.service.mark_all_read()["updated"], 0)
+        self.assertEqual(self.service.list_page(status="unread")["total"], 0)
+        with self.assertRaisesRegex(ValueError, "通知状态"):
+            self.service.list_page(status="unknown")
+
 
 if __name__ == "__main__":
     unittest.main()

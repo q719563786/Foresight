@@ -210,6 +210,24 @@ class ExternalRadarTests(unittest.TestCase):
         historical = service.radar_items()[0]
         self.assertEqual((historical["title"], historical["summary"]), ("河源水泵招标", "消防 设备"))
 
+    def test_radar_page_filters_and_returns_total_before_slicing(self):
+        items = [
+            ExternalItem("S-1", "Official feed", "https://example.com/a", "河源水泵项目甲", "公开招标"),
+            ExternalItem("S-1", "Official feed", "https://example.com/b", "河源水泵项目乙", "采购公告"),
+            ExternalItem("S-1", "Official feed", "https://example.com/c", "深圳水泵项目", "采购公告"),
+        ]
+        service = self.service(lambda source: items)
+        self.add_source_and_rule(service)
+        service.refresh_source("S-1")
+
+        page = service.radar_page(limit=1, offset=1, query="河源")
+
+        self.assertEqual(page["total"], 2)
+        self.assertEqual(len(page["items"]), 1)
+        self.assertIn("河源", page["items"][0]["title"])
+        with self.assertRaisesRegex(ValueError, "分页"):
+            service.radar_page(limit=101)
+
 
 if __name__ == "__main__":
     unittest.main()

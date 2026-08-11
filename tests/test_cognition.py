@@ -178,6 +178,42 @@ class CognitionServiceTests(unittest.TestCase):
         self.assertEqual((listed["title"], listed["summary"]), ("医保政策", "公开 说明"))
         self.assertEqual((detailed["title"], detailed["summary"]), ("医保政策", "公开 说明"))
 
+    def test_cluster_page_filters_counts_and_validates_bounds(self):
+        rows = (
+            ("C-1", "广东医保政策", '["health","policy"]', "E3", 1, "2026-08-11T03:00:00Z"),
+            ("C-2", "河源医院通知", '["health"]', "E2", 1, "2026-08-11T02:00:00Z"),
+            ("C-3", "银行利率变化", '["finance"]', "E1", 0, "2026-08-11T01:00:00Z"),
+        )
+        with self.database.connect() as connection:
+            for cluster_id, title, categories, evidence, needs, timestamp in rows:
+                connection.execute(
+                    """
+                    INSERT INTO event_clusters(
+                        cluster_id,title,summary,first_seen_at,last_seen_at,
+                        evidence_level,evidence_hash,categories_json,status,
+                        needs_judgment,independent_domains,primary_source_count,
+                        created_at,updated_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        cluster_id, title, "摘要", timestamp, timestamp, evidence,
+                        f"hash-{cluster_id}", categories, "active", needs, 1, 0,
+                        timestamp, timestamp,
+                    ),
+                )
+
+        page = self.service.list_clusters_page(
+            limit=1, offset=1, query="", category="health", needs_judgment=True
+        )
+
+        self.assertEqual(page["total"], 2)
+        self.assertEqual([item["cluster_id"] for item in page["items"]], ["C-2"])
+        self.assertEqual((page["limit"], page["offset"]), (1, 1))
+        with self.assertRaisesRegex(ValueError, "分页"):
+            self.service.list_clusters_page(limit=0)
+        with self.assertRaisesRegex(ValueError, "证据"):
+            self.service.list_clusters_page(evidence="E9")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -155,14 +155,27 @@ class NotificationService:
             "delivery": delivery,
         }
 
-    def list_notifications(self, limit: int = 100) -> list[dict]:
+    def list_page(self, limit: int = 20, offset: int = 0, status: str = "") -> dict:
+        limit = int(limit)
+        offset = int(offset)
+        status = str(status or "").strip().casefold()
+        if not 1 <= limit <= 100 or offset < 0:
+            raise ValueError("分页参数无效")
+        if status not in {"", "unread", "read", "digest"}:
+            raise ValueError("通知状态无效")
+        where = " WHERE status=?" if status else ""
+        values = [status] if status else []
         with self.database.connect() as connection:
+            total = connection.execute(
+                f"SELECT COUNT(*) FROM notification_log{where}", values
+            ).fetchone()[0]
             rows = connection.execute(
-                """
+                f"""
                 SELECT * FROM notification_log
-                ORDER BY created_at DESC,notification_id DESC LIMIT ?
+                {where}
+                ORDER BY created_at DESC,notification_id DESC LIMIT ? OFFSET ?
                 """,
-                (max(1, min(int(limit), 1000)),),
+                (*values, limit, offset),
             ).fetchall()
         output = []
         for row in rows:
@@ -171,7 +184,11 @@ class NotificationService:
             item["reason"] = metadata.get("summary", "")
             item["action_window_hours"] = metadata.get("action_window_hours")
             output.append(item)
-        return output
+        return {"items": output, "total": total, "limit": limit, "offset": offset}
+
+    def list_notifications(self, limit: int = 100) -> list[dict]:
+        safe_limit = max(1, min(int(limit), 100))
+        return self.list_page(limit=safe_limit)["items"]
 
     def mark_read(self, notification_id: str) -> dict:
         now = _iso(self.now())
@@ -186,3 +203,15 @@ class NotificationService:
             if result.rowcount != 1:
                 raise KeyError(notification_id)
         return {"notification_id": notification_id, "status": "read"}
+
+    def mark_all_read(self) -> dict:
+        now = _iso(self.now())
+        with self.database.connect() as connection:
+            result = connection.execute(
+                """
+                UPDATE notification_log SET status='read',read_at=?
+                WHERE status='unread'
+                """,
+                (now,),
+            )
+        return {"status": "read", "updated": result.rowcount}

@@ -313,19 +313,67 @@ class CognitionService:
                 """
             ).fetchone()[0]
 
-    def list_clusters(self, limit: int = 100) -> list[dict]:
+    def list_clusters_page(
+        self,
+        limit: int = 10,
+        offset: int = 0,
+        query: str = "",
+        category: str = "",
+        evidence: str = "",
+        needs_judgment=None,
+    ) -> dict:
+        limit = int(limit)
+        offset = int(offset)
+        if not 1 <= limit <= 100 or offset < 0:
+            raise ValueError("分页参数无效")
+        evidence = str(evidence or "").strip().upper()
+        if evidence not in {"", "E1", "E2", "E3", "E4"}:
+            raise ValueError("证据等级无效")
+        if needs_judgment not in {None, True, False}:
+            raise ValueError("待研判筛选无效")
+        clauses = []
+        values = []
+        query = plain_text(query, max_length=100)
+        category = str(category or "").strip().casefold()
+        if query:
+            clauses.append("(c.title LIKE ? OR c.summary LIKE ?)")
+            like = f"%{query}%"
+            values.extend((like, like))
+        if category:
+            clauses.append("c.categories_json LIKE ?")
+            values.append(f'%"{category}"%')
+        if evidence:
+            clauses.append("c.evidence_level=?")
+            values.append(evidence)
+        if needs_judgment is not None:
+            clauses.append("c.needs_judgment=?")
+            values.append(int(needs_judgment))
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
         with self.database.connect() as connection:
+            total = connection.execute(
+                f"SELECT COUNT(*) FROM event_clusters c{where}", values
+            ).fetchone()[0]
             rows = connection.execute(
-                """
+                f"""
                 SELECT c.*, COUNT(ci.item_id) AS item_count
                 FROM event_clusters c
                 LEFT JOIN event_cluster_items ci ON ci.cluster_id=c.cluster_id
+                {where}
                 GROUP BY c.cluster_id
-                ORDER BY c.last_seen_at DESC LIMIT ?
+                ORDER BY c.last_seen_at DESC LIMIT ? OFFSET ?
                 """,
-                (max(1, min(int(limit), 1000)),),
+                (*values, limit, offset),
             ).fetchall()
-        return [self._cluster_dict(row) for row in rows]
+        return {
+            "items": [self._cluster_dict(row) for row in rows],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+    def list_clusters(self, limit: int = 100) -> list[dict]:
+        safe_limit = max(1, min(int(limit), 100))
+        return self.list_clusters_page(limit=safe_limit)["items"]
 
     def get_cluster(self, cluster_id: str) -> dict:
         with self.database.connect() as connection:

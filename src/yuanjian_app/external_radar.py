@@ -406,18 +406,39 @@ class ExternalRadarService:
                 )
             return {"status": "error", "error_type": error.error_type, "message": str(error)}
 
-    def radar_items(self, limit=100):
+    def radar_page(self, limit=10, offset=0, query=""):
+        limit = int(limit)
+        offset = int(offset)
+        if not 1 <= limit <= 100 or offset < 0:
+            raise ValueError("分页参数无效")
+        query = plain_text(query, max_length=100)
+        where = ""
+        values = []
+        if query:
+            where = " WHERE e.title LIKE ? OR e.summary LIKE ?"
+            like = f"%{query}%"
+            values.extend((like, like))
         with self.database.connect() as connection:
+            total = connection.execute(
+                f"""
+                SELECT COUNT(DISTINCT e.item_id)
+                FROM external_items e
+                JOIN external_matches m ON m.item_id=e.item_id
+                {where}
+                """,
+                values,
+            ).fetchone()[0]
             items = connection.execute(
-                """
+                f"""
                 SELECT e.*, MAX(m.score) AS best_score
                 FROM external_items e
                 JOIN external_matches m ON m.item_id = e.item_id
+                {where}
                 GROUP BY e.item_id
                 ORDER BY best_score DESC, COALESCE(e.published_at, e.first_seen_at) DESC
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """,
-                (int(limit),),
+                (*values, limit, offset),
             ).fetchall()
             output = []
             for item in items:
@@ -449,7 +470,11 @@ class ExternalRadarService:
                     for match in matches
                 ]
                 output.append(row)
-        return output
+        return {"items": output, "total": total, "limit": limit, "offset": offset}
+
+    def radar_items(self, limit=100):
+        safe_limit = max(1, min(int(limit), 100))
+        return self.radar_page(limit=safe_limit)["items"]
 
     def refresh_due_sources(self):
         due_at = iso(self.now())

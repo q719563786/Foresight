@@ -522,6 +522,75 @@ class HttpApiTests(unittest.TestCase):
         self.assertTrue(labels)
         self.assertEqual(set(labels), {"false_positive"})
 
+    def test_paged_radar_cluster_and_notification_apis_form_action_center_contract(self):
+        self.post_json(
+            "/api/external/sources",
+            {
+                "source_id": "S-PAGE",
+                "name": "分页来源",
+                "kind": "rss",
+                "endpoint": "https://page.example/rss",
+            },
+        )
+        self.post_json(
+            "/api/external/rules",
+            {"rule_id": "W-PAGE", "query": "医保", "importance": 5},
+        )
+        self.post_json("/api/external/refresh", {"source_id": "S-PAGE"})
+
+        radar = self.get_json("/api/external/radar?limit=1&offset=0&q=%E5%8C%BB%E4%BF%9D")
+        clusters = self.get_json("/api/cognition/clusters?limit=1&offset=0&needs_judgment=true")
+
+        self.assertEqual((radar["total"], radar["limit"], radar["offset"]), (1, 1, 0))
+        self.assertEqual((clusters["total"], clusters["limit"], clusters["offset"]), (1, 1, 0))
+        self.assertEqual(clusters["clusters"], clusters["items"])
+
+        notification = self.services.notifications.consider(
+            {
+                "impact_id": "P-PAGE",
+                "cluster_id": clusters["items"][0]["cluster_id"],
+                "alert_level": "L3",
+                "evidence_hash": "page-hash",
+                "action_window_hours": 24,
+            },
+            "需要处理",
+        )
+        unread = self.get_json("/api/notifications?limit=20&offset=0&status=unread")
+        self.assertEqual(unread["total"], 1)
+        self.assertEqual(unread["notifications"][0]["notification_id"], notification["notification_id"])
+
+        _, marked = self.post_json("/api/notifications/read-all", {})
+        self.assertEqual(marked["updated"], 1)
+        self.assertEqual(self.get_json("/api/notifications?status=unread")["total"], 0)
+
+    def test_invalid_pagination_returns_bad_request(self):
+        request = urllib.request.Request(
+            self.base_url + "/api/cognition/clusters?limit=0",
+            headers={"X-YuanJian-Token": "test-token"},
+        )
+
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            urllib.request.urlopen(request, timeout=2)
+
+        self.assertEqual(raised.exception.code, 400)
+        payload = json.loads(raised.exception.read().decode("utf-8"))
+        self.assertEqual(payload["error"]["code"], "invalid_request")
+        raised.exception.close()
+
+    def test_mark_all_notifications_requires_session_token(self):
+        request = urllib.request.Request(
+            self.base_url + "/api/notifications/read-all",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            urllib.request.urlopen(request, timeout=2)
+
+        self.assertEqual(raised.exception.code, 403)
+        raised.exception.close()
+
 
 if __name__ == "__main__":
     unittest.main()

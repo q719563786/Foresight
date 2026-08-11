@@ -78,6 +78,17 @@ def create_server(host, port, token, services):
                 raise ValueError("请求内容为空或过大")
             return json.loads(self.rfile.read(length).decode("utf-8"))
 
+        def _pagination(self, parsed, default_limit):
+            query = parse_qs(parsed.query)
+            try:
+                limit = int(query.get("limit", [default_limit])[0])
+                offset = int(query.get("offset", [0])[0])
+            except (TypeError, ValueError) as error:
+                raise ValueError("分页参数无效") from error
+            if not 1 <= limit <= 100 or offset < 0:
+                raise ValueError("分页参数无效")
+            return query, limit, offset
+
         def _static(self, name, content_type):
             path = STATIC_ROOT / name
             if not path.is_file():
@@ -129,7 +140,17 @@ def create_server(host, port, token, services):
                 query = parse_qs(parsed.query).get("q", [""])[0]
                 self._json({"documents": services.knowledge.list_documents(query)})
             elif path == "/api/external/radar":
-                self._json({"items": services.external.radar_items()})
+                try:
+                    query, limit, offset = self._pagination(parsed, 10)
+                    self._json(
+                        services.external.radar_page(
+                            limit=limit,
+                            offset=offset,
+                            query=query.get("q", [""])[0],
+                        )
+                    )
+                except ValueError as error:
+                    self._error(400, "invalid_request", str(error))
             elif path == "/api/external/sources":
                 self._json({"sources": services.external.list_sources()})
             elif path == "/api/external/rules":
@@ -137,7 +158,23 @@ def create_server(host, port, token, services):
             elif path == "/api/cognition/status":
                 self._json(services.cognition_controller.status())
             elif path == "/api/cognition/clusters":
-                self._json({"clusters": services.cognition.list_clusters()})
+                try:
+                    query, limit, offset = self._pagination(parsed, 10)
+                    raw_needs = query.get("needs_judgment", [""])[0].casefold()
+                    needs_judgment = {"": None, "true": True, "false": False}.get(raw_needs)
+                    if raw_needs not in {"", "true", "false"}:
+                        raise ValueError("待研判筛选无效")
+                    page = services.cognition.list_clusters_page(
+                        limit=limit,
+                        offset=offset,
+                        query=query.get("q", [""])[0],
+                        category=query.get("category", [""])[0],
+                        evidence=query.get("evidence", [""])[0],
+                        needs_judgment=needs_judgment,
+                    )
+                    self._json({**page, "clusters": page["items"]})
+                except ValueError as error:
+                    self._error(400, "invalid_request", str(error))
             elif path.startswith("/api/cognition/clusters/"):
                 cluster_id = unquote(path.removeprefix("/api/cognition/clusters/"))
                 self._json(services.cognition_controller.cluster_detail(cluster_id))
@@ -152,9 +189,16 @@ def create_server(host, port, token, services):
             elif path == "/api/cognition/jobs":
                 self._json({"jobs": services.cognition_controller.list_jobs()})
             elif path == "/api/notifications":
-                self._json(
-                    {"notifications": services.notifications.list_notifications()}
-                )
+                try:
+                    query, limit, offset = self._pagination(parsed, 20)
+                    page = services.notifications.list_page(
+                        limit=limit,
+                        offset=offset,
+                        status=query.get("status", [""])[0],
+                    )
+                    self._json({**page, "notifications": page["items"]})
+                except ValueError as error:
+                    self._error(400, "invalid_request", str(error))
             elif path == "/api/settings/startup":
                 self._json(
                     services.startup.status()
@@ -278,6 +322,9 @@ def create_server(host, port, token, services):
                             cluster_id, str(payload.get("action", "")), payload
                         )
                     )
+                    return
+                if path == "/api/notifications/read-all":
+                    self._json(services.notifications.mark_all_read())
                     return
                 if path.startswith("/api/notifications/") and path.endswith("/read"):
                     notification_id = unquote(
