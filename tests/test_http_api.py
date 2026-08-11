@@ -239,6 +239,19 @@ class HttpApiTests(unittest.TestCase):
             script = response.read().decode("utf-8")
         self.assertIn("showCognition().catch(showError)", script)
 
+    def test_home_page_loads_the_cognition_feedback_behavior(self):
+        with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:
+            body = response.read().decode("utf-8")
+        with urllib.request.urlopen(
+            self.base_url + "/cognition_ui.js", timeout=2
+        ) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(
+                response.headers.get_content_type(), "text/javascript"
+            )
+
+        self.assertIn('src="/cognition_ui.js"', body)
+
     def test_forecast_api_returns_json(self):
         request = urllib.request.Request(
             self.base_url + "/api/forecasts",

@@ -1,0 +1,90 @@
+import subprocess
+import unittest
+from pathlib import Path
+
+
+class CognitionFrontendTests(unittest.TestCase):
+    module_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "yuanjian_app"
+        / "static"
+        / "cognition_ui.js"
+    )
+
+    def run_node(self, body):
+        script = f"""
+const assert = require('node:assert/strict');
+const ui = require({str(self.module_path)!r});
+(async () => {{
+{body}
+}})().catch(error => {{ console.error(error); process.exit(1); }});
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            text=True,
+            encoding="utf-8",
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_success_shows_busy_then_refreshes_with_a_specific_result(self):
+        self.run_node(
+            """
+let finish;
+const button = {disabled:false, textContent:'立即运行认知'};
+const status = {textContent:'', className:''};
+let notice;
+const running = ui.runCognitionWithFeedback({
+  apiCall: () => new Promise(resolve => { finish = resolve; }),
+  button,
+  status,
+  onComplete: async value => { notice = value; },
+  setIntervalFn: () => 7,
+  clearIntervalFn: id => assert.equal(id, 7)
+});
+await Promise.resolve();
+assert.equal(button.disabled, true);
+assert.equal(button.textContent, '正在运行认知…');
+assert.match(status.textContent, /正在聚合信息/);
+finish({backfill:{processed:3}, queued:2, judgments:{succeeded:1}, mapped_impacts:4, notifications_created:1, elapsed_ms:5300});
+await running;
+assert.equal(button.disabled, false);
+assert.equal(button.textContent, '立即运行认知');
+assert.equal(notice.kind, 'success');
+assert.match(notice.text, /处理3条信息/);
+assert.match(notice.text, /形成4条利益影响/);
+assert.equal(notice.text.includes('5.3秒'), true);
+"""
+        )
+
+    def test_zero_result_and_error_are_both_visible_and_button_recovers(self):
+        self.run_node(
+            """
+const makeElement = () => ({disabled:false, textContent:'立即运行认知', className:''});
+let button = makeElement();
+let status = makeElement();
+let notice;
+await ui.runCognitionWithFeedback({
+  apiCall: async () => ({backfill:{processed:0}, queued:0, judgments:{succeeded:0}, mapped_impacts:0, notifications_created:0, elapsed_ms:9}),
+  button, status, onComplete: async value => { notice = value; },
+  setIntervalFn: () => 1, clearIntervalFn: () => {}
+});
+assert.equal(notice.text, '运行完成，本次没有新增待处理信息（0.0秒）');
+button = makeElement(); status = makeElement();
+await ui.runCognitionWithFeedback({
+  apiCall: async () => { throw new Error('认知任务正在运行，请稍候'); },
+  button, status, onComplete: async () => {},
+  setIntervalFn: () => 2, clearIntervalFn: () => {}
+});
+assert.equal(status.textContent, '运行失败：认知任务正在运行，请稍候');
+assert.match(status.className, /error/);
+assert.equal(button.disabled, false);
+assert.equal(button.textContent, '立即运行认知');
+"""
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

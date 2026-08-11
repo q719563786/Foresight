@@ -57,7 +57,7 @@ function clusterCard(item) {
   </article>`;
 }
 
-async function showCognition() {
+async function showCognition(runNotice = null) {
   title.textContent = '事件判断雷达';
   const [clusterData, status, trendData, notificationData] = await Promise.all([
     api('/api/cognition/clusters'), api('/api/cognition/status'), api('/api/cognition/trends'), api('/api/notifications')
@@ -66,14 +66,17 @@ async function showCognition() {
     `<span class="trend ${escapeHtml(item.status)}">${escapeHtml(item.category)}：${escapeHtml(item.event_count)}条 · ${escapeHtml(item.status)}</span>`
   ).join('');
   content.innerHTML = `<div class="metrics cognition-metrics"><div><strong>${status.clusters}</strong><span>事件簇</span></div><div><strong>${status.needs_judgment}</strong><span>待研判</span></div><div><strong>${status.unread_notifications}</strong><span>未读提醒</span></div></div>
-    <div class="panel cognition-toolbar"><div><h2>经过聚合与互证的外部事件</h2><p class="form-note">同题报道先合并，再按独立域名和官方来源分为E1—E4；私人利益只在本机映射。</p></div><button id="run-cognition">立即运行认知</button></div>
+    <div class="panel cognition-toolbar"><div><h2>经过聚合与互证的外部事件</h2><p class="form-note">同题报道先合并，再按独立域名和官方来源分为E1—E4；私人利益只在本机映射。</p><p id="cognition-run-status" class="run-status ${escapeHtml(runNotice?.kind || '')}" aria-live="polite">${escapeHtml(runNotice?.text || '点击后会显示运行进度和本次结果。')}</p></div><button id="run-cognition">立即运行认知</button></div>
     <div class="trend-strip">${trends || '<span class="trend accumulating">趋势数据积累中</span>'}</div>
     <div class="grid">${clusterData.clusters.length ? clusterData.clusters.map(clusterCard).join('') : '<div class="empty">尚未形成事件簇。后台会继续读取公开来源。</div>'}</div>
     <div class="panel"><h3>本地通知中心</h3>${notificationData.notifications.length ? notificationData.notifications.slice(0,5).map(item => `<p><span class="badge">${escapeHtml(item.alert_level)}</span> ${escapeHtml(item.reason)}</p>`).join('') : '<p>目前没有提醒。</p>'}</div>`;
   document.querySelector('#run-cognition').addEventListener('click', async event => {
-    event.target.disabled = true;
-    await api('/api/cognition/run', {method:'POST', body:'{}'});
-    await showCognition();
+    await CognitionUI.runCognitionWithFeedback({
+      apiCall: () => api('/api/cognition/run', {method:'POST', body:'{}'}),
+      button: event.currentTarget,
+      status: document.querySelector('#cognition-run-status'),
+      onComplete: notice => showCognition(notice)
+    });
   });
 }
 
