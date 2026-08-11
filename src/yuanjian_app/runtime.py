@@ -6,10 +6,55 @@ import json
 import os
 import threading
 from pathlib import Path
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 
 _HELD_PATHS = set()
 _HELD_GUARD = threading.Lock()
+
+
+class RuntimeClient:
+    """Send authenticated loopback commands to an existing YuanJian instance."""
+
+    def __init__(self, runtime, opener=urllib_request.urlopen):
+        self.runtime = runtime
+        self.opener = opener
+
+    def show_window(self) -> bool:
+        try:
+            port = self.runtime["port"]
+            token = self.runtime["token"]
+            if (
+                isinstance(port, bool)
+                or not isinstance(port, int)
+                or not 1 <= port <= 65535
+                or not isinstance(token, str)
+                or not token
+            ):
+                return False
+            request = urllib_request.Request(
+                f"http://127.0.0.1:{port}/api/window/show",
+                data=b"{}",
+                headers={
+                    "Content-Type": "application/json",
+                    "X-YuanJian-Token": token,
+                },
+                method="POST",
+            )
+            with self.opener(request, timeout=2) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                return response.status == 200 and payload.get("status") == "shown"
+        except (
+            KeyError,
+            TypeError,
+            ValueError,
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            urllib_error.URLError,
+        ):
+            return False
 
 
 class SingleInstance:

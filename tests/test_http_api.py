@@ -20,9 +20,34 @@ from yuanjian_app.knowledge import KnowledgeService
 from yuanjian_app.signals import SignalService
 from yuanjian_app.judgments import LocalHeuristicProvider, build_public_bundle
 from yuanjian_app.notifications import NotificationService
+from yuanjian_app.operations import CognitionOperation, OperationBusy
 from yuanjian_app.remote_ai import AiSettingsService, JudgmentQueue
 from yuanjian_app.secret_store import DpapiSecretStore
 from yuanjian_app.trends import TrendService
+
+
+class RecordingDesktop:
+    def __init__(self):
+        self.shown = 0
+        self.monitoring = True
+
+    def show_window(self):
+        self.shown += 1
+
+    def toggle_monitoring(self):
+        self.monitoring = not self.monitoring
+        return self.monitoring
+
+
+class SwitchableCognitionOperation:
+    def __init__(self, operation):
+        self.operation = operation
+        self.busy = False
+
+    def run(self, source):
+        if self.busy:
+            raise OperationBusy("busy")
+        return self.operation.run(source)
 
 
 class HttpApiTests(unittest.TestCase):
@@ -80,6 +105,10 @@ class HttpApiTests(unittest.TestCase):
             ai_settings,
             now=lambda: datetime(2026, 8, 11, 8, tzinfo=timezone.utc),
         )
+        self.desktop = RecordingDesktop()
+        self.cognition_operation = SwitchableCognitionOperation(
+            CognitionOperation(controller)
+        )
         self.services = Services(
             forecasts,
             interests,
@@ -93,6 +122,8 @@ class HttpApiTests(unittest.TestCase):
             impacts,
             None,
             ai_settings,
+            cognition_operation=self.cognition_operation,
+            desktop=self.desktop,
         )
         self.server = create_server("127.0.0.1", 0, "test-token", self.services)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -122,6 +153,54 @@ class HttpApiTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, 403)
         raised.exception.close()
+
+    def test_window_show_requires_token_and_wakes_the_existing_window(self):
+        request = urllib.request.Request(
+            self.base_url + "/api/window/show",
+            data=b"{}",
+            headers={
+                "Content-Type": "application/json",
+                "X-YuanJian-Token": "wrong-token",
+            },
+            method="POST",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            urllib.request.urlopen(request, timeout=2)
+        self.assertEqual(raised.exception.code, 403)
+        raised.exception.close()
+
+        status, payload = self.post_json("/api/window/show", {})
+
+        self.assertEqual((status, payload["status"]), (200, "shown"))
+        self.assertEqual(self.desktop.shown, 1)
+
+    def test_monitoring_toggle_returns_the_new_running_state(self):
+        _, paused = self.post_json("/api/monitoring/toggle", {})
+        _, resumed = self.post_json("/api/monitoring/toggle", {})
+
+        self.assertFalse(paused["monitoring"])
+        self.assertTrue(resumed["monitoring"])
+
+    def test_overlapping_cognition_run_returns_conflict_without_leaking_details(self):
+        self.cognition_operation.busy = True
+        request = urllib.request.Request(
+            self.base_url + "/api/cognition/run",
+            data=b"{}",
+            headers={
+                "Content-Type": "application/json",
+                "X-YuanJian-Token": "test-token",
+            },
+            method="POST",
+        )
+
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            urllib.request.urlopen(request, timeout=2)
+
+        self.assertEqual(raised.exception.code, 409)
+        payload = json.loads(raised.exception.read().decode("utf-8"))
+        raised.exception.close()
+        self.assertEqual(payload["error"]["code"], "operation_busy")
+        self.assertEqual(payload["error"]["message"], "认知任务正在运行，请稍候")
 
     def test_home_page_is_local_chinese_ui(self):
         with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:

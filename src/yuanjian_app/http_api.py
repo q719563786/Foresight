@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .forecasts import ForecastConflictError
+from .operations import OperationBusy
 
 
 def resolve_static_root(module_file, bundle_root=None):
@@ -35,6 +36,8 @@ class Services:
     impacts: object = None
     startup: object = None
     ai_settings: object = None
+    cognition_operation: object = None
+    desktop: object = None
 
 
 def create_server(host, port, token, services):
@@ -203,6 +206,17 @@ def create_server(host, port, token, services):
                     self._json({"status": "shutting_down"})
                     threading.Thread(target=self.server.shutdown, daemon=True).start()
                     return
+                if path == "/api/window/show":
+                    if services.desktop is None:
+                        raise ValueError("桌面窗口尚未就绪")
+                    services.desktop.show_window()
+                    self._json({"status": "shown"})
+                    return
+                if path == "/api/monitoring/toggle":
+                    if services.desktop is None:
+                        raise ValueError("桌面窗口尚未就绪")
+                    self._json({"monitoring": services.desktop.toggle_monitoring()})
+                    return
                 if path == "/api/knowledge/index":
                     self._json(services.knowledge.index_vault(payload.get("path", "")), 201)
                     return
@@ -230,7 +244,10 @@ def create_server(host, port, token, services):
                     self._json(services.external.refresh_source(source_id))
                     return
                 if path == "/api/cognition/run":
-                    self._json(services.cognition_controller.run_once())
+                    if services.cognition_operation is not None:
+                        self._json(services.cognition_operation.run("manual"))
+                    else:
+                        self._json(services.cognition_controller.run_once())
                     return
                 if path.startswith("/api/cognition/candidates/") and path.endswith("/confirm"):
                     impact_id = unquote(
@@ -296,6 +313,8 @@ def create_server(host, port, token, services):
                 self._error(404, "not_found", "接口不存在")
             except ForecastConflictError as error:
                 self._error(409, "forecast_conflict", str(error))
+            except OperationBusy:
+                self._error(409, "operation_busy", "认知任务正在运行，请稍候")
             except (ValueError, json.JSONDecodeError) as error:
                 self._error(400, "invalid_request", str(error))
             except KeyError:
