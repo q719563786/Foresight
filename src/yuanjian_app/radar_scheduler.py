@@ -3,6 +3,8 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from .operations import CognitionOperation
+
 
 def _iso(value):
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -18,22 +20,39 @@ class RadarScheduler:
         *,
         database=None,
         cognition=None,
+        cognition_operation=None,
         now=lambda: datetime.now(timezone.utc),
     ):
         self.service = service
         self.poll_seconds = float(poll_seconds)
         self.database = database or getattr(service, "database", None)
         self.cognition = cognition
+        self.cognition_operation = cognition_operation or (
+            CognitionOperation(cognition) if cognition is not None else None
+        )
         self.now = now
         self._stop = threading.Event()
+        self._paused = threading.Event()
         self._thread = None
 
     @property
     def running(self):
         return bool(self._thread and self._thread.is_alive())
 
+    @property
+    def paused(self):
+        return self._paused.is_set()
+
+    def pause(self):
+        self._paused.set()
+
+    def resume(self):
+        self._paused.clear()
+
     def run_once(self):
         """Compatibility entry: immediately run only due external sources."""
+        if self.paused:
+            return 0
         return self.service.refresh_due_sources()
 
     def _record(self, task, payload):
@@ -74,14 +93,22 @@ class RadarScheduler:
         return payload
 
     def run_external_once(self):
+        if self.paused:
+            return {"status": "paused"}
         return self._execute("external", self.service.refresh_due_sources)
 
     def run_cognition_once(self):
-        if self.cognition is None:
+        if self.paused:
+            return {"status": "paused"}
+        if self.cognition_operation is None:
             return {"status": "disabled"}
-        return self._execute("cognition", self.cognition.process_once)
+        return self._execute(
+            "cognition", lambda: self.cognition_operation.run("scheduled")
+        )
 
     def run_trends_once(self):
+        if self.paused:
+            return {"status": "paused"}
         if self.cognition is None:
             return {"status": "disabled"}
         return self._execute("trends", self.cognition.capture_trends)

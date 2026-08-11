@@ -101,6 +101,44 @@ class RadarSchedulerTests(unittest.TestCase):
         self.assertEqual(scheduler.run_once(), 1)
         self.assertEqual(calls, 1)
 
+    def test_paused_scheduler_skips_automatic_tasks_until_resumed(self):
+        class RecordingCognition:
+            def __init__(self):
+                self.process_calls = 0
+                self.trend_calls = 0
+
+            def process_once(self):
+                self.process_calls += 1
+                return {}
+
+            def capture_trends(self):
+                self.trend_calls += 1
+                return {}
+
+        cognition = RecordingCognition()
+        scheduler = RadarScheduler(
+            self.service(lambda source: []),
+            poll_seconds=0.01,
+            database=self.database,
+            cognition=cognition,
+            now=self.clock,
+        )
+
+        scheduler.pause()
+
+        self.assertTrue(scheduler.paused)
+        self.assertEqual(scheduler.run_external_once(), {"status": "paused"})
+        self.assertEqual(scheduler.run_cognition_once(), {"status": "paused"})
+        self.assertEqual(scheduler.run_trends_once(), {"status": "paused"})
+        self.assertEqual((cognition.process_calls, cognition.trend_calls), (0, 0))
+
+        scheduler.resume()
+        self.assertFalse(scheduler.paused)
+        self.assertEqual(scheduler.run_external_once()["status"], "ok")
+        self.assertEqual(scheduler.run_cognition_once()["status"], "ok")
+        self.assertEqual(scheduler.run_trends_once()["status"], "ok")
+        self.assertEqual((cognition.process_calls, cognition.trend_calls), (1, 1))
+
     def test_cognition_failure_is_visible_in_runtime_state(self):
         class FailingCognition:
             def process_once(self):
