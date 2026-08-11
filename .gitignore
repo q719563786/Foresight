@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 .venv*/
+.worktrees/
 build-artifacts/
 dist/
 deployment_draft*/
