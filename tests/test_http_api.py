@@ -252,6 +252,17 @@ class HttpApiTests(unittest.TestCase):
 
         self.assertIn('src="/cognition_ui.js"', body)
 
+    def test_home_page_loads_user_facing_ui_helpers(self):
+        with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:
+            home = response.read().decode("utf-8")
+
+        self.assertIn('<script src="/ui_core.js"></script>', home)
+        with urllib.request.urlopen(self.base_url + "/ui_core.js", timeout=2) as response:
+            helper = response.read().decode("utf-8")
+
+        self.assertIn("evidenceLabel", helper)
+        self.assertNotIn("https://", helper)
+
     def test_forecast_api_returns_json(self):
         request = urllib.request.Request(
             self.base_url + "/api/forecasts",

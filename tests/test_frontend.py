@@ -11,6 +11,7 @@ class CognitionFrontendTests(unittest.TestCase):
         / "static"
         / "cognition_ui.js"
     )
+    ui_core_path = module_path.with_name("ui_core.js")
 
     def run_node(self, body):
         script = f"""
@@ -28,6 +29,53 @@ const ui = require({str(self.module_path)!r});
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def run_ui_core(self, body):
+        script = f"""
+const assert = require('node:assert/strict');
+const ui = require({str(self.ui_core_path)!r});
+{body}
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            text=True,
+            encoding="utf-8",
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_user_facing_labels_query_and_time_are_stable(self):
+        self.run_ui_core(
+            """
+assert.equal(ui.evidenceLabel('E2'), 'E2 · 多源互证');
+assert.equal(ui.trendLabel('low_sample'), '样本积累中');
+assert.equal(ui.statusLabel('active'), '有效');
+assert.equal(ui.statusLabel('error'), '待重试');
+assert.equal(
+  ui.buildQuery({limit:10, offset:0, q:'医保', evidence:''}),
+  '?limit=10&offset=0&q=%E5%8C%BB%E4%BF%9D'
+);
+const now = new Date('2026-08-12T04:00:00Z');
+assert.equal(ui.formatLocalTime('2026-08-12T01:20:00Z', now, 0), '今天 01:20');
+assert.equal(ui.formatLocalTime('2026-08-11T03:10:00Z', now, 0), '昨天 03:10');
+assert.equal(ui.formatLocalTime('', now, 0), '时间未知');
+"""
+        )
+
+    def test_metric_filter_resets_pagination_and_maps_unread(self):
+        self.run_ui_core(
+            """
+assert.deepEqual(
+  ui.applyMetricFilter({limit:10, offset:30, q:'医保'}, 'unread'),
+  {limit:10, offset:0, q:'医保', notification_status:'unread'}
+);
+assert.deepEqual(
+  ui.applyMetricFilter({limit:10, offset:20, q:'医保'}, 'judge'),
+  {limit:10, offset:0, q:'医保', needs_judgment:true}
+);
+"""
+        )
 
     def test_success_shows_busy_then_refreshes_with_a_specific_result(self):
         self.run_node(
