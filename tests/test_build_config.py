@@ -3,9 +3,14 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from yuanjian_app import __version__
+
 
 class BuildConfigTests(unittest.TestCase):
     project = Path(__file__).resolve().parents[1]
+
+    def test_package_reports_version_070(self):
+        self.assertEqual(__version__, "0.7.0")
 
     def powershell_json(self, script, *arguments):
         result = subprocess.run(
