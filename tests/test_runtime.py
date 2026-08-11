@@ -1,10 +1,18 @@
 import json
 import os
+from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
-from pathlib import Path
+from unittest import mock
 
-from yuanjian_app.runtime import RuntimeClient, RuntimeDiscovery, SingleInstance
+from yuanjian_app.runtime import (
+    RuntimeClient,
+    RuntimeDiscovery,
+    SingleInstance,
+    _process_exists,
+)
 
 
 class RecordingResponse:
@@ -32,6 +40,31 @@ class RecordingOpener:
 
 
 class RuntimeTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows process probe regression")
+    def test_windows_process_probe_recognizes_a_gui_process(self):
+        pythonw = Path(sys.executable).with_name("pythonw.exe")
+        if not pythonw.exists():
+            self.skipTest("pythonw.exe is unavailable")
+        child = subprocess.Popen(
+            [str(pythonw), "-c", "import time; time.sleep(30)"],
+        )
+        try:
+            self.assertTrue(_process_exists(child.pid))
+            with self.assertRaises(subprocess.TimeoutExpired):
+                child.wait(timeout=0.25)
+        finally:
+            if child.poll() is None:
+                child.terminate()
+                child.wait(timeout=5)
+
+    @unittest.skipUnless(os.name == "nt", "Windows process probe regression")
+    def test_windows_process_probe_never_sends_a_signal(self):
+        with mock.patch(
+            "yuanjian_app.runtime.os.kill",
+            side_effect=AssertionError("Windows process probes must be read-only"),
+        ):
+            self.assertTrue(_process_exists(os.getpid()))
+
     def test_runtime_client_posts_token_to_existing_instance(self):
         opener = RecordingOpener()
         client = RuntimeClient(
