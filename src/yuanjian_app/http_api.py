@@ -204,7 +204,13 @@ def create_server(host, port, token, services):
                     return
                 if path == "/api/shutdown":
                     self._json({"status": "shutting_down"})
-                    threading.Thread(target=self.server.shutdown, daemon=True).start()
+                    target = (
+                        services.desktop.request_exit
+                        if services.desktop is not None
+                        and hasattr(services.desktop, "request_exit")
+                        else self.server.shutdown
+                    )
+                    threading.Thread(target=target, daemon=True).start()
                     return
                 if path == "/api/window/show":
                     if services.desktop is None:

@@ -1,6 +1,6 @@
 import unittest
 
-from yuanjian_app.desktop import DesktopLifecycle
+from yuanjian_app.desktop import DesktopBridge, DesktopLifecycle, PyWebViewDesktop
 
 
 class RecordingWindow:
@@ -15,6 +15,9 @@ class RecordingWindow:
 
     def restore(self):
         self.calls.append("restore")
+
+    def destroy(self):
+        self.calls.append("destroy")
 
 
 class RecordingTray:
@@ -34,6 +37,82 @@ class RecordingMonitor:
 
     def resume(self):
         self.paused = False
+
+
+class EventHook:
+    def __init__(self):
+        self.handlers = []
+
+    def __iadd__(self, handler):
+        self.handlers.append(handler)
+        return self
+
+
+class GuiWindow(RecordingWindow):
+    def __init__(self):
+        super().__init__()
+        self.events = type("Events", (), {"closing": EventHook()})()
+
+
+class FakeWebView:
+    def __init__(self):
+        self.window = GuiWindow()
+        self.create_calls = []
+        self.start_calls = []
+
+    def create_window(self, **kwargs):
+        self.create_calls.append(kwargs)
+        return self.window
+
+    def start(self, **kwargs):
+        self.start_calls.append(kwargs)
+
+
+class GuiTray(RecordingTray):
+    def __init__(self, name, title, image, menu):
+        super().__init__()
+        self.name = name
+        self.title = title
+        self.image = image
+        self.menu = menu
+
+    def run_detached(self):
+        self.calls.append("run_detached")
+
+
+class FakePystray:
+    Icon = GuiTray
+
+    class MenuItem:
+        def __init__(self, text, action, **kwargs):
+            self.text = text
+            self.action = action
+            self.kwargs = kwargs
+
+    class Menu:
+        def __init__(self, *items):
+            self.items = items
+
+
+class FakeImage:
+    @staticmethod
+    def new(mode, size, color):
+        return {"mode": mode, "size": size, "color": color}
+
+
+class FakeDraw:
+    def __init__(self, image):
+        self.image = image
+
+    def rounded_rectangle(self, *args, **kwargs):
+        return None
+
+    def line(self, *args, **kwargs):
+        return None
+
+
+class FakeImageDraw:
+    Draw = FakeDraw
 
 
 class DesktopLifecycleTests(unittest.TestCase):
@@ -68,12 +147,13 @@ class DesktopLifecycleTests(unittest.TestCase):
 
         self.assertEqual(self.tray.calls, ["stop"])
         self.assertEqual(self.shutdown_calls, ["shutdown"])
+        self.assertEqual(self.window.calls, ["destroy"])
 
     def test_close_allows_window_destruction_after_exit_begins(self):
         self.lifecycle.request_exit()
 
         self.assertTrue(self.lifecycle.close_to_tray())
-        self.assertEqual(self.window.calls, [])
+        self.assertEqual(self.window.calls, ["destroy"])
 
     def test_toggle_monitoring_returns_new_running_state(self):
         self.assertFalse(self.lifecycle.toggle_monitoring())
@@ -84,6 +164,54 @@ class DesktopLifecycleTests(unittest.TestCase):
     def test_manual_cognition_uses_the_shared_callback(self):
         self.assertEqual(self.lifecycle.run_cognition_once(), {"status": "ok"})
         self.assertEqual(self.cognition_calls, ["run"])
+
+
+class DesktopBridgeTests(unittest.TestCase):
+    def test_bridge_forwards_controls_to_the_bound_desktop(self):
+        target = type(
+            "Target",
+            (),
+            {
+                "show_window": lambda self: setattr(self, "shown", True),
+                "toggle_monitoring": lambda self: False,
+                "request_exit": lambda self: setattr(self, "exited", True),
+            },
+        )()
+        bridge = DesktopBridge()
+        bridge.bind(target)
+
+        bridge.show_window()
+        self.assertFalse(bridge.toggle_monitoring())
+        bridge.request_exit()
+
+        self.assertTrue(target.shown)
+        self.assertTrue(target.exited)
+
+
+class PyWebViewDesktopTests(unittest.TestCase):
+    def test_run_creates_edge_window_and_tray_without_browser_fallback(self):
+        webview = FakeWebView()
+        monitor = RecordingMonitor()
+        shell = PyWebViewDesktop(
+            monitor=monitor,
+            run_cognition=lambda: {"status": "ok"},
+            request_shutdown=lambda: None,
+            gui_loader=lambda: (webview, FakePystray, FakeImage, FakeImageDraw),
+        )
+
+        shell.run("http://127.0.0.1:4567/?token=x", hidden=True)
+
+        created = webview.create_calls[0]
+        self.assertEqual(created["title"], "远见 · 外部认知大脑")
+        self.assertEqual(created["url"], "http://127.0.0.1:4567/?token=x")
+        self.assertEqual((created["width"], created["height"]), (1180, 780))
+        self.assertEqual(created["min_size"], (900, 620))
+        self.assertTrue(created["hidden"])
+        self.assertEqual(webview.start_calls, [{"gui": "edgechromium"}])
+        self.assertIn("run_detached", shell.lifecycle.tray.calls)
+
+        self.assertFalse(webview.window.events.closing.handlers[0]())
+        self.assertEqual(webview.window.calls, ["hide"])
 
 
 if __name__ == "__main__":
