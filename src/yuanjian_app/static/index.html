@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>远见 · 个人利益预测</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <aside>
+    <div class="brand"><span>远见</span><small>个人利益预测</small></div>
+    <button class="nav active" data-view="cognition">事件判断雷达</button>
+    <button class="nav" data-view="external">原始信息流</button>
+    <button class="nav" data-view="dashboard">内部今日雷达</button>
+    <button class="nav" data-view="event">录入新事件</button>
+    <button class="nav" data-view="signals">信号收件箱</button>
+    <button class="nav" data-view="interests">利益地图</button>
+    <button class="nav" data-view="knowledge">知识库</button>
+    <button class="nav" data-view="create">新建预测</button>
+    <button class="nav" data-view="forecasts">全部预测</button>
+    <button class="nav" data-view="score">模型表现</button>
+    <button class="nav" data-view="settings">后台与AI设置</button>
+  </aside>
+  <main>
+    <header><div><h1 id="page-title">事件判断雷达</h1><small class="judgment-legend">证据等级 · 反对证据 · 时间窗口</small></div><div class="header-actions"><span id="connection">后台监控 · 本地认知运行中</span><button id="shutdown" type="button">安全退出</button></div></header>
+    <section id="content" aria-live="polite"><div class="loading">正在读取本地账本…</div></section>
+  </main>
+  <template id="empty-template"><div class="empty">目前没有需要处理的内容。</div></template>
+  <script src="/app.js"></script>
+</body>
+</html>

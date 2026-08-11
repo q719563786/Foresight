@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv*/
+build-artifacts/
+dist/
+deployment_draft*/
+smoke-runtime-*/
+*.db
+*.sqlite*
+*.log
+*.env
+backups/
+cache/
