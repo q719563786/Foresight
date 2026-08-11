@@ -607,6 +607,34 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 403)
         raised.exception.close()
 
+    def test_missing_cluster_and_notification_return_specific_readable_errors(self):
+        cluster_request = urllib.request.Request(
+            self.base_url + "/api/cognition/clusters/C-missing",
+            headers={"X-YuanJian-Token": "test-token"},
+        )
+        with self.assertRaises(urllib.error.HTTPError) as cluster_error:
+            urllib.request.urlopen(cluster_request, timeout=2)
+        self.assertEqual(cluster_error.exception.code, 404)
+        cluster_payload = json.loads(cluster_error.exception.read().decode("utf-8"))
+        cluster_error.exception.close()
+        self.assertEqual(cluster_payload["error"], {"code": "cluster_not_found", "message": "事件不存在"})
+
+        notification_request = urllib.request.Request(
+            self.base_url + "/api/notifications/D-missing/read",
+            data=b"{}",
+            headers={
+                "Content-Type": "application/json",
+                "X-YuanJian-Token": "test-token",
+            },
+            method="POST",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as notification_error:
+            urllib.request.urlopen(notification_request, timeout=2)
+        self.assertEqual(notification_error.exception.code, 404)
+        notification_payload = json.loads(notification_error.exception.read().decode("utf-8"))
+        notification_error.exception.close()
+        self.assertEqual(notification_payload["error"], {"code": "notification_not_found", "message": "提醒不存在"})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -70,8 +70,20 @@
     return {start, end: Math.min(total, offset + limit), total};
   }
 
+  function movePage(state, direction, total) {
+    const step = direction === 'next' ? state.limit : -state.limit;
+    const maximum = Math.max(0, Math.floor((Math.max(0, total) - 1) / state.limit) * state.limit);
+    return {...state, offset: Math.min(maximum, Math.max(0, state.offset + step))};
+  }
+
+  function sourceHealthLabel(source) {
+    if (!source?.enabled) return '已暂停';
+    if (source.stale) return '内容陈旧';
+    return statusLabel(source.last_status);
+  }
+
   return Object.freeze({
     evidenceLabel, trendLabel, statusLabel, formatLocalTime,
-    buildQuery, applyMetricFilter, pageRange
+    buildQuery, applyMetricFilter, pageRange, movePage, sourceHealthLabel
   });
 });

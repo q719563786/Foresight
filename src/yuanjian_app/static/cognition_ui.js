@@ -27,6 +27,7 @@
       button,
       status,
       onComplete,
+      onFailure = () => {},
       setIntervalFn = setInterval,
       clearIntervalFn = clearInterval
     } = options;
@@ -47,8 +48,10 @@
       await onComplete(notice);
       return result;
     } catch (error) {
+      const notice = {kind: 'error', text: `运行失败：${error.message || '未知错误'}`};
       status.className = 'run-status error';
-      status.textContent = `运行失败：${error.message || '未知错误'}`;
+      status.textContent = notice.text;
+      await onFailure(notice);
       return null;
     } finally {
       clearIntervalFn(timer);

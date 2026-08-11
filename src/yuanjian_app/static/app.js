@@ -78,7 +78,7 @@ function metricsHtml(status) {
 
 function paginationHtml(page, name) {
   const range = UI.pageRange(page.total, page.limit, page.offset);
-  return `<div class="pagination"><span>${range.total ? `第 ${range.start}–${range.end} 条，共 ${range.total} 条` : '没有结果'}</span><div><button class="button page-button" data-page-name="${name}" data-direction="prev" ${page.offset <= 0 ? 'disabled' : ''}>上一页</button><button class="button page-button" data-page-name="${name}" data-direction="next" ${page.offset + page.limit >= page.total ? 'disabled' : ''}>下一页</button></div></div>`;
+  return `<div class="pagination"><span>${range.total ? `第 ${range.start}–${range.end} 条，共 ${range.total} 条` : '没有结果'}</span><div><button class="button page-button" data-page-name="${name}" data-direction="prev" data-total="${page.total}" ${page.offset <= 0 ? 'disabled' : ''}>上一页</button><button class="button page-button" data-page-name="${name}" data-direction="next" data-total="${page.total}" ${page.offset + page.limit >= page.total ? 'disabled' : ''}>下一页</button></div></div>`;
 }
 
 function clusterRow(item) {
@@ -107,8 +107,7 @@ function bindMetricButtons() {
 
 function bindPaging(page, render) {
   document.querySelectorAll(`.page-button[data-page-name="${page}"]`).forEach(button => button.addEventListener('click', () => {
-    const target = state[page];
-    target.offset = Math.max(0, target.offset + (button.dataset.direction === 'next' ? target.limit : -target.limit));
+    state[page] = UI.movePage(state[page], button.dataset.direction, Number(button.dataset.total));
     render().catch(showPageError);
   }));
 }
@@ -160,7 +159,7 @@ async function renderWorld() {
     api(`/api/external/radar${UI.buildQuery(state.world)}`), api('/api/external/sources'), api('/api/external/rules')
   ]);
   const failed = sourceData.sources.filter(item => item.last_status === 'error' || item.stale);
-  const sources = sourceData.sources.map(source => `<article class="source-row"><div><strong>${escapeHtml(source.name)}</strong><span class="source-status ${source.last_status === 'error' ? 'warning' : ''}">${source.stale ? '内容陈旧' : escapeHtml(UI.statusLabel(source.enabled ? source.last_status : 'paused'))}</span></div><p>${escapeHtml(source.kind)} · 每 ${escapeHtml(source.refresh_minutes)} 分钟</p>${source.last_error ? `<p class="inline-error">${escapeHtml(source.last_error)}</p>` : ''}<div class="row-actions"><button class="button refresh-source" data-id="${escapeHtml(source.source_id)}" ${source.enabled ? '' : 'disabled'}>立即刷新</button><button class="button toggle-source" data-id="${escapeHtml(source.source_id)}" data-enabled="${source.enabled}">${source.enabled ? '暂停' : '恢复'}</button></div></article>`).join('');
+  const sources = sourceData.sources.map(source => `<article class="source-row"><div><strong>${escapeHtml(source.name)}</strong><span class="source-status ${source.last_status === 'error' ? 'warning' : ''}">${escapeHtml(UI.sourceHealthLabel(source))}</span></div><p>${escapeHtml(source.kind)} · 每 ${escapeHtml(source.refresh_minutes)} 分钟</p>${source.last_error ? `<p class="inline-error">${escapeHtml(source.last_error)}</p>` : ''}<div class="row-actions"><button class="button refresh-source" data-id="${escapeHtml(source.source_id)}" ${source.enabled ? '' : 'disabled'}>立即刷新</button><button class="button toggle-source" data-id="${escapeHtml(source.source_id)}" data-enabled="${source.enabled}">${source.enabled ? '暂停' : '恢复'}</button></div></article>`).join('');
   content.innerHTML = `${failed.length ? `<div class="source-warning"><strong>${failed.length} 个来源暂时不可用</strong><span>抓取失败不代表没有消息；系统会继续按计划重试。</span></div>` : ''}
     <section class="panel"><div class="panel-head"><div><h2>经过规则过滤的新变化</h2><p>每页只读取 10 条，避免一次加载几百条。</p></div></div><form id="world-search" class="filterbar"><label class="sr-only" for="world-q">搜索外部信息</label><input id="world-q" name="q" type="search" value="${escapeHtml(state.world.q)}" placeholder="搜索外部信息"><button class="button">搜索</button></form><div class="external-list">${page.items.map(externalRow).join('') || '<div class="state-panel"><h3>当前筛选没有结果</h3><p>这只表示没有命中规则，不代表互联网没有相关消息。</p></div>'}</div>${paginationHtml(page, 'world')}</section>
     <section class="panel"><div class="panel-head"><div><h2>来源健康状态</h2><p>${sourceData.sources.length} 个来源 · ${sourceData.sources.length - failed.length} 个正常</p></div></div><div class="source-grid">${sources || '<div class="state-panel">尚未添加来源。</div>'}</div></section>
@@ -299,7 +298,8 @@ runButton.addEventListener('click', event => CognitionUI.runCognitionWithFeedbac
   apiCall: () => api('/api/cognition/run', {method:'POST', body:'{}'}),
   button: event.currentTarget,
   status: {textContent: '', className: ''},
-  onComplete: notice => renderToday(notice)
+  onComplete: notice => renderToday(notice),
+  onFailure: notice => showToast(notice.text, 'error')
 }).catch(error => showToast(error.message, 'error')));
 document.querySelector('#shutdown').addEventListener('click', async () => {
   if (!confirm('确定要完全退出远见吗？关闭窗口会继续在托盘监控。')) return;

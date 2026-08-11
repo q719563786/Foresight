@@ -77,6 +77,23 @@ assert.deepEqual(
 """
         )
 
+    def test_pagination_and_source_health_keep_user_context(self):
+        self.run_ui_core(
+            """
+assert.deepEqual(
+  ui.movePage({limit:10, offset:10, q:'医保'}, 'next', 35),
+  {limit:10, offset:20, q:'医保'}
+);
+assert.deepEqual(
+  ui.movePage({limit:10, offset:0, q:'医保'}, 'prev', 35),
+  {limit:10, offset:0, q:'医保'}
+);
+assert.equal(ui.sourceHealthLabel({enabled:false, last_status:'ok', stale:false}), '已暂停');
+assert.equal(ui.sourceHealthLabel({enabled:true, last_status:'error', stale:false}), '待重试');
+assert.equal(ui.sourceHealthLabel({enabled:true, last_status:'ok', stale:true}), '内容陈旧');
+"""
+        )
+
     def test_success_shows_busy_then_refreshes_with_a_specific_result(self):
         self.run_node(
             """
@@ -120,14 +137,16 @@ await ui.runCognitionWithFeedback({
   setIntervalFn: () => 1, clearIntervalFn: () => {}
 });
 assert.equal(notice.text, '运行完成，本次没有新增待处理信息（0.0秒）');
-button = makeElement(); status = makeElement();
+button = makeElement(); status = makeElement(); let failure;
 await ui.runCognitionWithFeedback({
   apiCall: async () => { throw new Error('认知任务正在运行，请稍候'); },
   button, status, onComplete: async () => {},
+  onFailure: notice => { failure = notice; },
   setIntervalFn: () => 2, clearIntervalFn: () => {}
 });
 assert.equal(status.textContent, '运行失败：认知任务正在运行，请稍候');
 assert.match(status.className, /error/);
+assert.deepEqual(failure, {kind:'error', text:'运行失败：认知任务正在运行，请稍候'});
 assert.equal(button.disabled, false);
 assert.equal(button.textContent, '立即运行认知');
 """

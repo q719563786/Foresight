@@ -180,7 +180,10 @@ def create_server(host, port, token, services):
                     self._error(400, "invalid_request", str(error))
             elif path.startswith("/api/cognition/clusters/"):
                 cluster_id = unquote(path.removeprefix("/api/cognition/clusters/"))
-                self._json(services.cognition_controller.cluster_detail(cluster_id))
+                try:
+                    self._json(services.cognition_controller.cluster_detail(cluster_id))
+                except KeyError:
+                    self._error(404, "cluster_not_found", "事件不存在")
             elif path == "/api/cognition/trends":
                 self._json(
                     {
@@ -309,22 +312,28 @@ def create_server(host, port, token, services):
                     impact_id = unquote(
                         path.removeprefix("/api/cognition/candidates/").removesuffix("/confirm")
                     ).rstrip("/")
-                    self._json(
-                        services.impacts.confirm_candidate(
-                            impact_id, payload.get("probability")
-                        ),
-                        201,
-                    )
+                    try:
+                        self._json(
+                            services.impacts.confirm_candidate(
+                                impact_id, payload.get("probability")
+                            ),
+                            201,
+                        )
+                    except KeyError:
+                        self._error(404, "candidate_not_found", "候选预测不存在")
                     return
                 if path.startswith("/api/cognition/clusters/") and path.endswith("/feedback"):
                     cluster_id = unquote(
                         path.removeprefix("/api/cognition/clusters/").removesuffix("/feedback")
                     ).rstrip("/")
-                    self._json(
-                        services.cognition_controller.feedback(
-                            cluster_id, str(payload.get("action", "")), payload
+                    try:
+                        self._json(
+                            services.cognition_controller.feedback(
+                                cluster_id, str(payload.get("action", "")), payload
+                            )
                         )
-                    )
+                    except KeyError:
+                        self._error(404, "cluster_not_found", "事件不存在")
                     return
                 if path == "/api/notifications/read-all":
                     self._json(services.notifications.mark_all_read())
@@ -333,7 +342,10 @@ def create_server(host, port, token, services):
                     notification_id = unquote(
                         path.removeprefix("/api/notifications/").removesuffix("/read")
                     ).rstrip("/")
-                    self._json(services.notifications.mark_read(notification_id))
+                    try:
+                        self._json(services.notifications.mark_read(notification_id))
+                    except KeyError:
+                        self._error(404, "notification_not_found", "提醒不存在")
                     return
                 if path == "/api/settings/startup":
                     if services.startup is None:
