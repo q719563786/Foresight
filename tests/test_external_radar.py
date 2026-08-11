@@ -178,6 +178,38 @@ class ExternalRadarTests(unittest.TestCase):
         self.assertEqual(audit["action"], "cognition.process_failed")
         self.assertIn("RuntimeError", audit["details_json"])
 
+    def test_new_feed_items_are_stored_and_returned_as_visible_text(self):
+        marked_up = ExternalItem(
+            source_id="S-1",
+            source_name="Official feed",
+            url="https://example.com/notices/markup",
+            title='<a href="https://example.com">河源水泵招标</a>',
+            summary='<font color="red">消防&nbsp;设备</font><script>steal()</script>',
+        )
+        service = self.service(lambda source: [marked_up])
+        self.add_source_and_rule(service)
+
+        service.refresh_source("S-1")
+        item = service.radar_items()[0]
+
+        self.assertEqual(item["title"], "河源水泵招标")
+        self.assertEqual(item["summary"], "消防 设备")
+        with self.database.connect() as connection:
+            stored = connection.execute(
+                "SELECT title,summary FROM external_items WHERE item_id=?",
+                (item["item_id"],),
+            ).fetchone()
+        self.assertEqual((stored["title"], stored["summary"]), ("河源水泵招标", "消防 设备"))
+
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE external_items SET title=?,summary=? WHERE item_id=?",
+                ("<b>河源水泵招标</b>", "<i>消防&nbsp;设备</i>", item["item_id"]),
+            )
+
+        historical = service.radar_items()[0]
+        self.assertEqual((historical["title"], historical["summary"]), ("河源水泵招标", "消防 设备"))
+
 
 if __name__ == "__main__":
     unittest.main()

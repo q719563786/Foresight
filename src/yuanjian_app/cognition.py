@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from .clustering import ClusterText, should_merge
+from .text_cleaning import plain_text
 from .external_sources import normalize_published_at
 
 
@@ -347,13 +348,20 @@ class CognitionService:
                 (cluster_id,),
             ).fetchall()
         result = self._cluster_dict(row)
-        result["items"] = [dict(item) for item in items]
+        result["items"] = []
+        for item in items:
+            clean_item = dict(item)
+            clean_item["title"] = plain_text(clean_item.get("title"), max_length=300)
+            clean_item["summary"] = plain_text(clean_item.get("summary"), max_length=2000)
+            result["items"].append(clean_item)
         result["entities"] = [dict(entity) for entity in entities]
         return result
 
     @staticmethod
     def _cluster_dict(row):
         result = dict(row)
+        result["title"] = plain_text(result.get("title"), max_length=300)
+        result["summary"] = plain_text(result.get("summary"), max_length=2000)
         result["categories"] = json.loads(result.pop("categories_json"))
         result["needs_judgment"] = bool(result["needs_judgment"])
         return result

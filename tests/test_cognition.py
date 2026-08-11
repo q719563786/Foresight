@@ -158,6 +158,26 @@ class CognitionServiceTests(unittest.TestCase):
 
         self.assertEqual(result["evidence_level"], "E1")
 
+    def test_historical_cluster_markup_is_cleaned_when_read(self):
+        self.add_source("S-A", "a.example")
+        self.add_item("E-1", "S-A", "a.example", "医保政策", "公开说明", 0)
+        cluster_id = self.service.process_item("E-1")["cluster_id"]
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE event_clusters SET title=?,summary=? WHERE cluster_id=?",
+                (
+                    '<a href="x">医保政策</a>',
+                    '<font color="red">公开&nbsp;说明</font><script>bad()</script>',
+                    cluster_id,
+                ),
+            )
+
+        listed = self.service.list_clusters()[0]
+        detailed = self.service.get_cluster(cluster_id)
+
+        self.assertEqual((listed["title"], listed["summary"]), ("医保政策", "公开 说明"))
+        self.assertEqual((detailed["title"], detailed["summary"]), ("医保政策", "公开 说明"))
+
 
 if __name__ == "__main__":
     unittest.main()

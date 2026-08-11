@@ -12,6 +12,7 @@ from .external_sources import (
     parse_html_list,
     validate_public_url,
 )
+from .text_cleaning import plain_text
 
 
 def utc_now():
@@ -267,8 +268,10 @@ class ExternalRadarService:
     def _store_item(self, connection, source, item, fetched_at):
         canonical = canonicalize_url(item.url)
         item_id = "E-" + hashlib.sha256(canonical.encode()).hexdigest()[:24]
+        title = plain_text(item.title, max_length=300)
+        summary = plain_text(item.summary, max_length=2000)
         content_hash = hashlib.sha256(
-            f"{item.title.strip()}\n{item.summary.strip()}".encode("utf-8")
+            f"{title}\n{summary}".encode("utf-8")
         ).hexdigest()
         exists = connection.execute(
             "SELECT item_id FROM external_items WHERE canonical_url = ?", (canonical,)
@@ -292,8 +295,8 @@ class ExternalRadarService:
                 (
                     item_id,
                     canonical,
-                    item.title.strip(),
-                    item.summary.strip(),
+                    title,
+                    summary,
                     item.published_at or None,
                     fetched_at,
                     source["source_id"],
@@ -321,8 +324,8 @@ class ExternalRadarService:
         self._match(
             connection,
             item_id,
-            item.title,
-            item.summary,
+            title,
+            summary,
             source["reliability_weight"],
         )
         return new, item_id
@@ -432,6 +435,8 @@ class ExternalRadarService:
                     key=lambda value: int(value[1:]),
                 )
                 row = dict(item)
+                row["title"] = plain_text(row.get("title"), max_length=300)
+                row["summary"] = plain_text(row.get("summary"), max_length=2000)
                 row["alert_level"] = best_alert
                 row["matched_rules"] = [
                     {
