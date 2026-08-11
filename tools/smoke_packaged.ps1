@@ -1,11 +1,26 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$ExePath
+    [string]$ExePath,
+    [switch]$Describe
 )
 
 $ErrorActionPreference = "Stop"
+$headlessEnvironment = "YUANJIAN_HEADLESS"
+$headlessValue = "1"
+
+if ($Describe) {
+    [pscustomobject]@{
+        HeadlessEnvironment = $headlessEnvironment
+        HeadlessValue = $headlessValue
+    } | ConvertTo-Json -Compress
+    exit 0
+}
+
+if ([string]::IsNullOrWhiteSpace($ExePath)) {
+    throw "ExePath is required"
+}
+
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$smokeRoot = Join-Path $projectRoot "smoke-runtime-v05"
+$smokeRoot = Join-Path $projectRoot "smoke-runtime-v06"
 
 if (Test-Path -LiteralPath $smokeRoot) {
     throw "Smoke target already exists"
@@ -13,7 +28,7 @@ if (Test-Path -LiteralPath $smokeRoot) {
 
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
 $env:YUANJIAN_DATA_DIR = $smokeRoot
-$env:YUANJIAN_NO_BROWSER = "1"
+$env:YUANJIAN_HEADLESS = $headlessValue
 $env:YUANJIAN_BACKGROUND = "1"
 $process = Start-Process -FilePath $ExePath -ArgumentList "--background" -PassThru -WindowStyle Hidden
 

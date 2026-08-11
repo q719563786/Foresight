@@ -1,16 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_submodules
 
 project_root = Path(SPEC).parent.parent
 source_root = project_root / "src"
 static_root = source_root / "yuanjian_app" / "static"
+desktop_hiddenimports = (
+    collect_submodules("webview")
+    + collect_submodules("pystray")
+    + collect_submodules("PIL")
+)
 
 a = Analysis(
     [str(project_root / "build" / "windows_entry.py")],
     pathex=[str(source_root)],
     binaries=[],
     datas=[(str(static_root), "yuanjian_app/static")],
-    hiddenimports=[],
+    hiddenimports=desktop_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
