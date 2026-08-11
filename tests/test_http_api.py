@@ -206,38 +206,43 @@ class HttpApiTests(unittest.TestCase):
         with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:
             body = response.read().decode("utf-8")
 
-        self.assertIn("今日雷达", body)
+        self.assertIn("行动中心", body)
         self.assertNotIn("https://", body)
 
     def test_home_page_exposes_formal_forecast_and_safe_exit_controls(self):
         with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:
             body = response.read().decode("utf-8")
 
-        self.assertIn("新建预测", body)
-        self.assertIn('data-view="create"', body)
+        self.assertIn("我的利益", body)
+        self.assertNotIn('data-view="create"', body)
         self.assertIn("安全退出", body)
 
     def test_home_page_exposes_sensory_center_navigation(self):
         with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:
             body = response.read().decode("utf-8")
 
-        self.assertIn("利益地图", body)
-        self.assertIn("信号收件箱", body)
-        self.assertIn("知识库", body)
+        self.assertEqual(body.count('class="nav primary-nav'), 4)
+        self.assertIn('data-view="today"', body)
+        self.assertIn('data-view="world"', body)
+        self.assertIn('data-view="benefit"', body)
+        self.assertIn('data-view="system"', body)
 
     def test_home_page_makes_external_information_radar_the_default_view(self):
         with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:
             body = response.read().decode("utf-8")
 
-        self.assertIn("事件判断雷达", body)
-        self.assertIn('data-view="cognition"', body)
+        self.assertIn("今天先看这三件事", body)
+        self.assertIn('data-view="today"', body)
         self.assertIn("后台监控", body)
-        self.assertIn("证据等级", body)
-        self.assertIn("反对证据", body)
-        self.assertIn("时间窗口", body)
+        self.assertEqual(body.count('class="metric-button'), 3)
+        self.assertIn('data-filter="judge"', body)
+        self.assertIn('data-filter="unread"', body)
+        self.assertIn('id="event-search"', body)
+        self.assertIn('id="toast"', body)
+        self.assertIn('aria-live="polite"', body)
         with urllib.request.urlopen(self.base_url + "/app.js", timeout=2) as response:
             script = response.read().decode("utf-8")
-        self.assertIn("showCognition().catch(showError)", script)
+        self.assertIn("renderToday().catch(showPageError)", script)
 
     def test_home_page_loads_the_cognition_feedback_behavior(self):
         with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:

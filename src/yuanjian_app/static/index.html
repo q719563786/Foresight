@@ -3,29 +3,41 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>远见 · 个人利益预测</title>
+  <title>远见 · 个人利益预知</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <aside>
-    <div class="brand"><span>远见</span><small>个人利益预测</small></div>
-    <button class="nav active" data-view="cognition">事件判断雷达</button>
-    <button class="nav" data-view="external">原始信息流</button>
-    <button class="nav" data-view="dashboard">内部今日雷达</button>
-    <button class="nav" data-view="event">录入新事件</button>
-    <button class="nav" data-view="signals">信号收件箱</button>
-    <button class="nav" data-view="interests">利益地图</button>
-    <button class="nav" data-view="knowledge">知识库</button>
-    <button class="nav" data-view="create">新建预测</button>
-    <button class="nav" data-view="forecasts">全部预测</button>
-    <button class="nav" data-view="score">模型表现</button>
-    <button class="nav" data-view="settings">后台与AI设置</button>
-  </aside>
-  <main>
-    <header><div><h1 id="page-title">事件判断雷达</h1><small class="judgment-legend">证据等级 · 反对证据 · 时间窗口</small></div><div class="header-actions"><span id="connection">后台监控 · 本地认知运行中</span><button id="shutdown" type="button">安全退出</button></div></header>
-    <section id="content" aria-live="polite"><div class="loading">正在读取本地账本…</div></section>
-  </main>
-  <template id="empty-template"><div class="empty">目前没有需要处理的内容。</div></template>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span>远见</span><small>个人利益预知</small></div>
+      <nav aria-label="主要功能">
+        <button class="nav primary-nav active" type="button" data-view="today"><span class="nav-icon">今</span><span>行动中心</span></button>
+        <button class="nav primary-nav" type="button" data-view="world"><span class="nav-icon">外</span><span>外部世界</span></button>
+        <button class="nav primary-nav" type="button" data-view="benefit"><span class="nav-icon">利</span><span>我的利益</span></button>
+        <button class="nav primary-nav" type="button" data-view="system"><span class="nav-icon">设</span><span>系统设置</span></button>
+      </nav>
+      <div class="sidebar-foot">
+        <div id="connection" class="monitor-status"><span class="status-dot"></span><span>后台监控 · 正在连接</span></div>
+        <button id="shutdown" class="button button-quiet" type="button">安全退出</button>
+      </div>
+    </aside>
+    <main class="main-area">
+      <header class="topbar">
+        <div><h1 id="page-title">今天先看这三件事</h1><p id="page-caption">按与你的利益关系、可信度和紧迫性排序</p></div>
+        <div class="header-actions"><button id="open-notifications" class="button" type="button">通知中心 <span id="header-unread">0</span></button><button id="run-cognition" class="button button-primary" type="button">立即更新判断</button></div>
+      </header>
+      <section id="content" aria-live="polite">
+        <div class="metrics" aria-label="快捷筛选">
+          <button class="metric-button selected" type="button" data-filter="all"><strong>—</strong><span>重要事件</span></button>
+          <button class="metric-button" type="button" data-filter="judge"><strong>—</strong><span>等你判断</span></button>
+          <button class="metric-button" type="button" data-filter="unread"><strong>—</strong><span>未读提醒</span></button>
+        </div>
+        <form class="filterbar" aria-label="事件筛选"><label class="sr-only" for="event-search">搜索事件</label><input id="event-search" type="search" placeholder="搜索事件、地区或机构"><button class="button" type="submit">搜索</button></form>
+        <div class="loading-block"><span class="spinner"></span>正在读取本地判断账本…</div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <script src="/cognition_ui.js"></script>
   <script src="/ui_core.js"></script>
   <script src="/app.js"></script>
