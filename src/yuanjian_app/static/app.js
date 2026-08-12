@@ -179,7 +179,7 @@ function forecastCard(item) {
 
 async function renderBenefit(subview = state.benefit) {
   state.view = 'benefit'; state.benefit = subview;
-  setHeader('我的利益', '外部变化如何传导到现金流、家庭、工作和风险退路');
+  setHeader('我的情况', '外部变化如何传导到现金流、家庭、工作和风险退路');
   showLoading();
   const items = [['interests','利益地图'],['forecasts','预测账本'],['create','新建预测'],['signals','信号收件箱'],['score','模型表现'],['event','录入事件']];
   let body = '';
@@ -201,7 +201,7 @@ async function renderBenefit(subview = state.benefit) {
   } else {
     body = `<form id="event-form" class="panel form-grid"><h2>录入你刚知道的新事件</h2><label class="full">事件内容<textarea name="text" required rows="7" placeholder="只写事实、来源和时间，不先写结论"></textarea></label><label>发生时间<input name="occurred_at" type="datetime-local"></label><button class="button button-primary">保存并分析</button><div id="event-result" class="full"></div></form>`;
   }
-  content.innerHTML = `${subnav('我的利益', subview, items)}<section class="panel">${body}</section>`;
+  content.innerHTML = `${subnav('我的情况', subview, items)}<section class="panel">${body}</section>`;
   bindSubview('.subnav-button', value => renderBenefit(value));
   bindBenefitActions(subview);
 }

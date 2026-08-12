@@ -663,7 +663,7 @@ class CognitionController:
                     "impact_id": row["impact_id"],
                     "mode": mode,
                     "alert_level": row["alert_level"],
-                    "risk_level": "高风险" if row["alert_level"] == "L4" else "需留意",
+                    "risk_level": "需要行动" if mode == "action" else "继续观察",
                     "interest_name": interest_name,
                     "title": f"{interest_name}：{fact_summary}",
                     "time_window": time_window,

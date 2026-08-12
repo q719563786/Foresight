@@ -304,6 +304,9 @@ class RiskDashboardTests(unittest.TestCase):
         self.assertTrue(all(item["alert_level"] in {"L3", "L4"} for item in dashboard["items"]))
         self.assertTrue(all("原始新闻标题" not in item["title"] for item in dashboard["items"]))
         self.assertEqual(dashboard["items"][0]["action"], "第6项行动：先保留必要现金")
+        labels = {item["cluster_id"]: item["risk_level"] for item in dashboard["items"]}
+        self.assertEqual(labels["C-3"], "需要行动")
+        self.assertEqual(labels["C-7"], "继续观察")
 
     def test_dashboard_reports_verifying_and_never_calls_blind_monitoring_stable(self):
         self.add_risk(1, "L3", ["30天内"], pending=True)

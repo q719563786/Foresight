@@ -103,6 +103,13 @@ assert.deepEqual(ui.intelligenceRequests('manage'), ['/api/external/sources','/a
 """
         )
 
+    def test_personal_view_uses_the_same_plain_label_as_navigation(self):
+        app_script = self.module_path.with_name("app.js").read_text(encoding="utf-8")
+
+        self.assertIn("setHeader('我的情况'", app_script)
+        self.assertNotIn("setHeader('我的利益'", app_script)
+        self.assertIn("subnav('我的情况'", app_script)
+
     def test_user_facing_labels_query_and_time_are_stable(self):
         self.run_ui_core(
             """
