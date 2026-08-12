@@ -38,5 +38,28 @@
       .slice(0, 5);
   }
 
-  return Object.freeze({overviewLabel, counts, visibleRisks});
+  function detailSummary(detail) {
+    const judgment = detail?.judgment || {};
+    const impact = Array.isArray(detail?.impacts) ? detail.impacts[0] || {} : {};
+    const candidate = impact.candidate || {};
+    const triggers = [
+      ...(judgment.up_triggers || []).map(value => `风险升级：${value}`),
+      ...(judgment.down_triggers || []).map(value => `风险解除：${value}`)
+    ];
+    return {
+      interest: impact.interest_name || '已登记利益',
+      impact: impact.reason || '系统仍在核实具体影响',
+      action: candidate.recommended_action || '暂不做不可逆决定；按时间窗口复查。',
+      decisionBy: candidate.window_end || (judgment.horizons || []).join('、') || '等待下一次核实',
+      triggers
+    };
+  }
+
+  function intelligenceRequests(mode) {
+    if (mode === 'raw') return ['/api/external/radar?limit=10&offset=0'];
+    if (mode === 'manage') return ['/api/external/sources', '/api/external/rules'];
+    return ['/api/cognition/status', '/api/external/sources'];
+  }
+
+  return Object.freeze({overviewLabel, counts, visibleRisks, detailSummary, intelligenceRequests});
 });

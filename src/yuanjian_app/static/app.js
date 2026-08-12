@@ -231,7 +231,8 @@ async function renderSystem(subview = state.system) {
   state.view = 'system'; state.system = subview;
   setHeader('系统设置', '低频配置集中在这里，日常页面不再被参数淹没');
   showLoading();
-  const items = [['settings','后台监控'],['notifications','通知中心'],['knowledge','知识库']];
+  const items = [['settings','后台监控'],['intelligence','情报后台'],['notifications','通知中心'],['knowledge','知识库']];
+  if (subview === 'intelligence') return renderIntelligence(items);
   if (subview === 'notifications') return renderNotificationCenter(items);
   if (subview === 'knowledge') return renderKnowledge(items);
   const [ai, startup, status] = await Promise.all([api('/api/settings/ai'), api('/api/settings/startup'), api('/api/cognition/status')]);
@@ -240,6 +241,42 @@ async function renderSystem(subview = state.system) {
   bindSubview('.subnav-button', value => renderSystem(value));
   document.querySelector('#startup-toggle')?.addEventListener('click', async event => { await withBusy(event.currentTarget, '正在更新…', () => api('/api/settings/startup', {method:'POST', body:JSON.stringify({enabled:!startup.installed})})); showToast('登录启动设置已更新'); await renderSystem(); });
   document.querySelector('#ai-settings').addEventListener('submit', async event => { event.preventDefault(); const form = new FormData(event.target); const values = {enabled:form.get('enabled') === 'on', endpoint:form.get('endpoint'), model:form.get('model')}; if (form.get('token')) values.token = form.get('token'); await withBusy(event.submitter, '正在保存…', () => api('/api/settings/ai', {method:'POST', body:JSON.stringify(values)})); showToast('AI 设置已保存'); await renderSystem(); });
+}
+
+async function renderIntelligence(navItems, mode = 'summary') {
+  state.view = 'system'; state.system = 'intelligence';
+  setHeader('情报后台', '系统在这里处理公开信息；日常不需要你阅读');
+  showLoading('正在读取监控摘要…');
+  const requests = RiskUI.intelligenceRequests(mode);
+  const data = await Promise.all(requests.map(path => api(path)));
+  if (mode === 'raw') {
+    const page = data[0];
+    content.innerHTML = `${subnav('设置', 'intelligence', navItems)}<section class="panel"><div class="panel-head"><div><h2>原始情报</h2><p>仅在核查系统判断时阅读。</p></div><button id="intelligence-summary" class="button">返回摘要</button></div><div class="external-list">${page.items.map(externalRow).join('') || '<div class="state-panel">目前没有命中关注规则的公开信息。</div>'}</div>${paginationHtml(page, 'world')}</section>`;
+    bindSubview('.subnav-button', value => renderSystem(value));
+    document.querySelector('#intelligence-summary').addEventListener('click', () => renderIntelligence(navItems).catch(showPageError));
+    bindPaging('world', () => renderIntelligence(navItems, 'raw'));
+    return;
+  }
+  if (mode === 'manage') {
+    const [sourceData, ruleData] = data;
+    const sources = sourceData.sources.map(source => `<article class="source-row"><div><strong>${escapeHtml(source.name)}</strong><span class="source-status ${source.last_status === 'error' ? 'warning' : ''}">${escapeHtml(UI.sourceHealthLabel(source))}</span></div><p>${escapeHtml(UI.sourceKindLabel(source.kind))} · 每 ${escapeHtml(source.refresh_minutes)} 分钟</p>${source.last_error ? `<details><summary>查看技术错误</summary><p class="inline-error">${escapeHtml(source.last_error)}</p></details>` : ''}<div class="row-actions"><button class="button refresh-source" data-id="${escapeHtml(source.source_id)}" ${source.enabled ? '' : 'disabled'}>立即刷新</button><button class="button toggle-source" data-id="${escapeHtml(source.source_id)}" data-enabled="${source.enabled}">${source.enabled ? '暂停' : '恢复'}</button></div></article>`).join('');
+    content.innerHTML = `${subnav('设置', 'intelligence', navItems)}<section class="panel"><div class="panel-head"><div><h2>管理公开来源</h2><p>这些设置只影响系统的眼睛和耳朵。</p></div><button id="intelligence-summary" class="button">返回摘要</button></div><div class="source-grid">${sources || '<div class="state-panel">尚未添加来源。</div>'}</div></section><section class="panel"><details><summary>管理关注规则</summary><div class="chip-list">${ruleData.rules.map(rule => `<span class="chip">${escapeHtml(rule.query)} · 重要度 ${escapeHtml(rule.importance)}/5</span>`).join('') || '还没有关注词。'}</div><form id="rule-form" class="inline-form"><input name="query" required maxlength="80" placeholder="例如：行业、政策、资产"><select name="importance"><option value="5">最高</option><option value="4">高</option><option value="3" selected>中</option></select><button class="button button-primary">添加关注词</button></form></details><details><summary>添加公开来源</summary><form id="source-form" class="form-grid"><label>来源名称<input name="name" required maxlength="100"></label><label>公开地址<input name="endpoint" required type="url" placeholder="https://..."></label><label>类型<select name="kind"><option value="rss">RSS / Atom</option><option value="html_list">公开网页列表</option><option value="gdelt">GDELT JSON</option></select></label><button class="button button-primary">添加来源</button></form></details></section>`;
+    bindSubview('.subnav-button', value => renderSystem(value));
+    document.querySelector('#intelligence-summary').addEventListener('click', () => renderIntelligence(navItems).catch(showPageError));
+    document.querySelector('#rule-form')?.addEventListener('submit', async event => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); values.importance = Number(values.importance); await withBusy(event.submitter, '正在添加…', () => api('/api/external/rules', {method:'POST', body:JSON.stringify(values)})); showToast('关注规则已添加'); await renderIntelligence(navItems, 'manage'); });
+    document.querySelector('#source-form')?.addEventListener('submit', async event => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); await withBusy(event.submitter, '正在添加…', () => api('/api/external/sources', {method:'POST', body:JSON.stringify(values)})); showToast('公开来源已添加'); await renderIntelligence(navItems, 'manage'); });
+    document.querySelectorAll('.refresh-source').forEach(button => button.addEventListener('click', () => withBusy(button, '刷新中…', async () => { const result = await api('/api/external/refresh', {method:'POST', body:JSON.stringify({source_id:button.dataset.id})}); showToast(result.status === 'ok' ? `刷新完成，新增 ${result.new_count} 条` : '刷新失败，系统会自动重试', result.status === 'ok' ? 'success' : 'error'); await renderIntelligence(navItems, 'manage'); }).catch(error => showToast(error.message, 'error'))));
+    document.querySelectorAll('.toggle-source').forEach(button => button.addEventListener('click', async () => { await api(`/api/external/sources/${encodeURIComponent(button.dataset.id)}/enabled`, {method:'POST', body:JSON.stringify({enabled:button.dataset.enabled !== 'true'})}); showToast('来源状态已更新'); await renderIntelligence(navItems, 'manage'); }));
+    return;
+  }
+  const [status, sourceData] = data;
+  updateChrome(status);
+  const enabled = sourceData.sources.filter(source => source.enabled);
+  const healthy = enabled.filter(source => source.last_status === 'ok' && !source.stale);
+  content.innerHTML = `${subnav('设置', 'intelligence', navItems)}<section class="panel intelligence-summary"><h2>系统正在替你处理</h2><div class="risk-counts"><article class="risk-count"><strong>${escapeHtml(status.clusters)}</strong><span>已归并事件</span></article><article class="risk-count"><strong>${escapeHtml(healthy.length)}/${escapeHtml(enabled.length)}</strong><span>来源正常</span></article><article class="risk-count"><strong>${escapeHtml(status.needs_judgment)}</strong><span>仍在核实</span></article></div><p class="panel-note">只有形成个人风险结论的变化才会进入风险首页。</p><div class="row-actions"><button id="show-raw-intelligence" class="button">查看原始情报</button><button id="manage-intelligence" class="button">管理来源</button></div></section>`;
+  bindSubview('.subnav-button', value => renderSystem(value));
+  document.querySelector('#show-raw-intelligence').addEventListener('click', () => renderIntelligence(navItems, 'raw').catch(showPageError));
+  document.querySelector('#manage-intelligence').addEventListener('click', () => renderIntelligence(navItems, 'manage').catch(showPageError));
 }
 
 async function renderNotificationCenter(navItems = [['settings','后台监控'],['notifications','通知中心'],['knowledge','知识库']]) {
@@ -267,13 +304,15 @@ async function renderKnowledge(navItems) {
   document.querySelector('#index-form').addEventListener('submit', async event => { event.preventDefault(); const path = new FormData(event.target).get('path'); const result = await withBusy(event.submitter, '正在索引…', () => api('/api/knowledge/index', {method:'POST', body:JSON.stringify({path})})); showToast(`索引完成：${result.indexed} 篇`); await renderKnowledge(navItems); });
 }
 
-async function showClusterDetail(id) {
-  setHeader('事件详情', '公开证据、判断边界和本地私人影响分开呈现'); runButton.hidden = true; showLoading();
+async function showClusterDetail(id, evidenceOpen = false) {
+  setHeader('风险详情', '先看怎么做；只有需要核查时再看证据'); runButton.hidden = true; showLoading();
   const item = await api(`/api/cognition/clusters/${encodeURIComponent(id)}`);
   const judgment = item.judgment;
+  const detail = RiskUI.detailSummary(item);
   const evidence = item.items.map(source => `<li><a href="${escapeHtml(source.canonical_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title)}</a><span>${escapeHtml(source.source_domain)}</span></li>`).join('');
   const impacts = item.impacts.map(impact => `<article class="impact-row"><div class="row-between"><span class="badge">${escapeHtml(impact.alert_level)}</span><span>${Math.round(impact.impact_score*100)} 分</span></div><h3>${escapeHtml(impact.interest_name || impact.interest_id)}</h3><p>${escapeHtml(impact.reason)}</p>${impact.candidate ? `<div class="candidate"><strong>候选预测：${escapeHtml(impact.candidate.title)}</strong><label>人工概率<select class="candidate-probability">${[.1,.2,.3,.4,.5,.6,.7,.8,.9].map(value => `<option value="${value}" ${value === .5 ? 'selected' : ''}>${Math.round(value*100)}%</option>`).join('')}</select></label><button class="button button-primary confirm-candidate" data-id="${escapeHtml(impact.impact_id)}">确认进入预测账本</button></div>` : ''}</article>`).join('');
-  content.innerHTML = `<button class="button back-today">← 返回行动中心</button><div class="detail-grid"><section class="panel"><div class="row-between"><span class="badge">${escapeHtml(UI.evidenceLabel(item.evidence_level))}</span><span>${escapeHtml(item.independent_domains)} 个独立域名</span></div><h2>${escapeHtml(item.title)}</h2><h3>事实判断</h3><p>${escapeHtml(judgment?.fact_summary || '等待研判')}</p><h3>因果链</h3><ol>${(judgment?.causal_chain || []).map(value => `<li>${escapeHtml(value)}</li>`).join('') || '<li>等待研判</li>'}</ol><h3>反对证据与不确定性</h3><ul>${(judgment?.uncertainties || []).map(value => `<li>${escapeHtml(value)}</li>`).join('') || '<li>尚未形成</li>'}</ul><h3>时间窗口</h3><p>${(judgment?.horizons || []).map(escapeHtml).join(' · ') || '等待研判'}</p><h3>公开证据</h3><ul class="evidence-list">${evidence}</ul></section><aside><section class="panel"><h2>对你的本地影响</h2><p class="panel-note">以下内容只在本机映射，不发送给外部 AI。</p>${impacts || '<div class="state-panel">没有命中已登记利益。</div>'}</section><section class="panel feedback"><h3>纠正本地判断</h3><div class="row-actions"><button class="button" data-action="mute">静音 7 天</button><button class="button" data-action="lower_importance">降低重要度</button><button class="button" data-action="false_positive">标记误报</button></div></section></aside></div>`;
+  const triggers = detail.triggers.map(value => `<li>${escapeHtml(value)}</li>`).join('') || '<li>系统尚未识别明确的升级或解除条件。</li>';
+  content.innerHTML = `<button class="button back-today">← 返回风险首页</button><div class="detail-grid"><section class="panel decision-panel"><span class="badge">${escapeHtml(detail.interest)}</span><h2>对你的影响</h2><p>${escapeHtml(detail.impact)}</p><div class="risk-action"><strong>现在怎么做</strong><p>${escapeHtml(detail.action)}</p></div><h3>最迟决定时间</h3><p>${escapeHtml(detail.decisionBy)}</p><h3>升级或解除条件</h3><ul>${triggers}</ul><details class="evidence-drawer" ${evidenceOpen ? 'open' : ''}><summary>为什么这样判断</summary><h3>事实判断</h3><p>${escapeHtml(judgment?.fact_summary || '等待研判')}</p><h3>因果链</h3><ol>${(judgment?.causal_chain || []).map(value => `<li>${escapeHtml(value)}</li>`).join('') || '<li>等待研判</li>'}</ol><h3>反对证据与不确定性</h3><ul>${(judgment?.uncertainties || []).map(value => `<li>${escapeHtml(value)}</li>`).join('') || '<li>尚未形成</li>'}</ul><h3>公开证据</h3><ul class="evidence-list">${evidence}</ul><details><summary>高级操作：进入正式预测账本</summary>${impacts || '<div class="state-panel">没有命中已登记利益。</div>'}</details></details></section><aside><section class="panel feedback"><h3>这个提醒不准确？</h3><div class="row-actions"><button class="button" data-action="mute">7 天内不再提醒</button><button class="button" data-action="lower_importance">降低提醒</button><button class="button" data-action="false_positive">与我无关</button></div></section></aside></div>`;
   document.querySelector('.back-today').addEventListener('click', () => renderRiskHome().catch(showPageError));
   document.querySelectorAll('.confirm-candidate').forEach(button => button.addEventListener('click', event => withBusy(event.currentTarget, '正在写入…', async () => { const probability = Number(button.closest('.candidate').querySelector('.candidate-probability').value); await api(`/api/cognition/candidates/${encodeURIComponent(button.dataset.id)}/confirm`, {method:'POST', body:JSON.stringify({probability})}); showToast('已写入不可变预测账本'); await showClusterDetail(id); }).catch(error => showToast(error.message, 'error'))));
   document.querySelectorAll('.feedback button').forEach(button => button.addEventListener('click', event => withBusy(event.currentTarget, '保存中…', async () => { await api(`/api/cognition/clusters/${encodeURIComponent(id)}/feedback`, {method:'POST', body:JSON.stringify({action:button.dataset.action})}); showToast('本地反馈已保存，不会发送给外部 AI'); }).catch(error => showToast(error.message, 'error'))));

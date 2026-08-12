@@ -86,6 +86,23 @@ assert.deepEqual(ui.visibleRisks(items).map(item => item.cluster_id), ['a','b','
 """
         )
 
+    def test_risk_detail_puts_action_before_evidence_and_back_office_is_lazy(self):
+        self.run_risk_ui(
+            """
+const detail = ui.detailSummary({
+  judgment:{fact_summary:'政策正在执行', horizons:['7天内'], up_triggers:['扩大执行'], down_triggers:['暂停执行']},
+  impacts:[{interest_name:'家庭现金流', reason:'可能增加支出', candidate:{recommended_action:'保留必要现金', window_end:'2026-08-19'}}]
+});
+assert.deepEqual(detail, {
+  interest:'家庭现金流', impact:'可能增加支出', action:'保留必要现金',
+  decisionBy:'2026-08-19', triggers:['风险升级：扩大执行','风险解除：暂停执行']
+});
+assert.deepEqual(ui.intelligenceRequests('summary'), ['/api/cognition/status','/api/external/sources']);
+assert.deepEqual(ui.intelligenceRequests('raw'), ['/api/external/radar?limit=10&offset=0']);
+assert.deepEqual(ui.intelligenceRequests('manage'), ['/api/external/sources','/api/external/rules']);
+"""
+        )
+
     def test_user_facing_labels_query_and_time_are_stable(self):
         self.run_ui_core(
             """
