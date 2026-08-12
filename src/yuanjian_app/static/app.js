@@ -7,6 +7,7 @@ const connection = document.querySelector('#connection');
 const unreadBadge = document.querySelector('#header-unread');
 const toast = document.querySelector('#toast');
 const UI = window.YuanJianUI;
+const RiskUI = window.YuanJianRiskUI;
 
 const state = {
   view: 'today', metric: 'all',
@@ -101,7 +102,7 @@ function bindMetricButtons() {
     state.metric = button.dataset.filter;
     state.clusters = UI.applyMetricFilter(state.clusters, state.metric);
     state.notifications.offset = 0;
-    renderToday().catch(showPageError);
+    renderRiskHome().catch(showPageError);
   }));
 }
 
@@ -112,37 +113,33 @@ function bindPaging(page, render) {
   }));
 }
 
-async function renderToday(runNotice = null) {
+function riskCard(item) {
+  return `<article class="risk-card risk-${escapeHtml(item.mode)}">
+    <div class="risk-card-head"><span class="risk-level">${escapeHtml(item.risk_level)}</span><span>${escapeHtml(item.interest_name)}</span></div>
+    <h2>${escapeHtml(item.title)}</h2>
+    <div class="risk-facts"><span><strong>时间</strong>${escapeHtml(item.time_window)}</span><span><strong>判断把握</strong>${escapeHtml(item.confidence)}</span><span><strong>变化</strong>${escapeHtml(item.direction)}</span></div>
+    <div class="risk-action"><strong>现在怎么做</strong><p>${escapeHtml(item.action)}</p></div>
+    <div class="row-actions"><button class="button button-primary risk-open" type="button" data-id="${escapeHtml(item.cluster_id)}">查看怎么做</button><button class="button risk-evidence" type="button" data-id="${escapeHtml(item.cluster_id)}">为什么这样判断</button></div>
+  </article>`;
+}
+
+async function renderRiskHome(runNotice = null) {
   state.view = 'today';
-  setHeader('今天先看这三件事', '按与你的利益关系、可信度和紧迫性排序', true);
-  showLoading('正在整理与你最相关的变化…');
-  const clusterQuery = {...state.clusters};
-  if (state.metric === 'judge') clusterQuery.needs_judgment = true;
-  const requests = [api('/api/cognition/status'), api('/api/cognition/trends')];
-  if (state.metric === 'unread') requests.push(api(`/api/notifications${UI.buildQuery({...state.notifications, status: 'unread'})}`));
-  else requests.push(api(`/api/cognition/clusters${UI.buildQuery(clusterQuery)}`));
-  const [status, trendData, page] = await Promise.all(requests);
+  setHeader('现在有没有风险', '系统已经替你过滤新闻，只保留结论和行动', true);
+  showLoading('正在整理你需要知道的风险…');
+  const [status, dashboard] = await Promise.all([
+    api('/api/cognition/status'), api('/api/risk-dashboard')
+  ]);
   updateChrome(status);
-  const trends = trendData.trends.filter(item => item.window_hours === 24).map(item => `<span class="trend trend-${escapeHtml(item.status)}">${escapeHtml(UI.categoryLabel(item.category))} · ${escapeHtml(UI.trendLabel(item.status))}</span>`).join('');
-  const isNotifications = state.metric === 'unread';
-  const rows = isNotifications ? page.notifications.map(notificationRow).join('') : page.items.map(clusterRow).join('');
-  const firstNotification = isNotifications ? page.notifications[0] : null;
-  content.innerHTML = `${metricsHtml(status)}
+  const risks = RiskUI.visibleRisks(dashboard.items);
+  const counts = RiskUI.counts(dashboard).map(item => `<article class="risk-count"><strong>${escapeHtml(item.value)}</strong><span>${escapeHtml(item.label)}</span></article>`).join('');
+  content.innerHTML = `
     ${runNotice ? `<div class="run-notice ${escapeHtml(runNotice.kind)}">${escapeHtml(runNotice.text)}</div>` : ''}
-    <div class="workspace-grid"><section class="panel main-panel"><div class="panel-head"><div><h2>${isNotifications ? '未读提醒' : state.metric === 'judge' ? '等待你判断的事件' : '与你最相关的外部变化'}</h2><p>公开事实与私人利益分开计算；证据不足时不会给出方向性结论。</p></div></div>
-      ${isNotifications ? '' : `<form id="event-filter" class="filterbar"><label class="sr-only" for="event-search">搜索事件</label><input id="event-search" name="q" type="search" value="${escapeHtml(state.clusters.q)}" placeholder="搜索事件、地区或机构"><select name="category" aria-label="事件领域"><option value="">全部领域</option><option value="health" ${state.clusters.category === 'health' ? 'selected' : ''}>健康</option><option value="employment" ${state.clusters.category === 'employment' ? 'selected' : ''}>就业</option><option value="finance" ${state.clusters.category === 'finance' ? 'selected' : ''}>金融</option><option value="policy" ${state.clusters.category === 'policy' ? 'selected' : ''}>政策</option></select><select name="evidence" aria-label="证据等级"><option value="">全部证据</option>${['E1','E2','E3','E4'].map(value => `<option ${state.clusters.evidence === value ? 'selected' : ''}>${value}</option>`).join('')}</select><button class="button" type="submit">筛选</button></form>`}
-      <div class="event-list">${rows || `<div class="state-panel"><h3>${isNotifications ? '没有未读提醒' : '没有符合条件的事件'}</h3><p>可以调整筛选；后台仍会继续读取公开信息。</p></div>`}</div>${paginationHtml(page, isNotifications ? 'notifications' : 'clusters')}</section>
-      <aside class="side-stack"><section class="panel action-panel"><h2>先处理</h2>${firstNotification ? `<p><strong>${escapeHtml(firstNotification.reason)}</strong></p><button class="button button-primary notification-open-cluster" data-cluster-id="${escapeHtml(firstNotification.cluster_id)}">查看下一步</button>` : '<p>目前没有必须立刻处理的提醒。</p>'}</section><section class="panel"><h2>趋势观察</h2><div class="trend-list">${trends || '<span class="trend">样本积累中</span>'}</div><p class="panel-note">趋势只描述变化，不自动等于买卖或行动建议。</p></section></aside></div>`;
-  bindMetricButtons();
-  document.querySelector('#event-filter')?.addEventListener('submit', event => {
-    event.preventDefault();
-    const values = Object.fromEntries(new FormData(event.target));
-    Object.assign(state.clusters, values, {offset: 0});
-    renderToday().catch(showPageError);
-  });
-  document.querySelectorAll('.cluster-open').forEach(button => button.addEventListener('click', () => showClusterDetail(button.dataset.id).catch(showPageError)));
-  bindNotificationActions(renderToday);
-  bindPaging(isNotifications ? 'notifications' : 'clusters', renderToday);
+    <section class="risk-overview state-${escapeHtml(dashboard.state)}"><span>${escapeHtml(RiskUI.overviewLabel(dashboard.state))}</span><h2>${escapeHtml(dashboard.summary)}</h2></section>
+    <section class="risk-counts" aria-label="风险概览">${counts}</section>
+    <section class="risk-list" aria-label="需要关注的风险">${risks.map(riskCard).join('') || '<div class="state-panel calm-state"><h2>你现在不需要处理什么</h2><p>系统会继续在后台监控，出现真正影响你的变化时再提醒。</p></div>'}</section>`;
+  document.querySelectorAll('.risk-open').forEach(button => button.addEventListener('click', () => showClusterDetail(button.dataset.id, false).catch(showPageError)));
+  document.querySelectorAll('.risk-evidence').forEach(button => button.addEventListener('click', () => showClusterDetail(button.dataset.id, true).catch(showPageError)));
 }
 
 function externalRow(item) {
@@ -277,7 +274,7 @@ async function showClusterDetail(id) {
   const evidence = item.items.map(source => `<li><a href="${escapeHtml(source.canonical_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title)}</a><span>${escapeHtml(source.source_domain)}</span></li>`).join('');
   const impacts = item.impacts.map(impact => `<article class="impact-row"><div class="row-between"><span class="badge">${escapeHtml(impact.alert_level)}</span><span>${Math.round(impact.impact_score*100)} 分</span></div><h3>${escapeHtml(impact.interest_name || impact.interest_id)}</h3><p>${escapeHtml(impact.reason)}</p>${impact.candidate ? `<div class="candidate"><strong>候选预测：${escapeHtml(impact.candidate.title)}</strong><label>人工概率<select class="candidate-probability">${[.1,.2,.3,.4,.5,.6,.7,.8,.9].map(value => `<option value="${value}" ${value === .5 ? 'selected' : ''}>${Math.round(value*100)}%</option>`).join('')}</select></label><button class="button button-primary confirm-candidate" data-id="${escapeHtml(impact.impact_id)}">确认进入预测账本</button></div>` : ''}</article>`).join('');
   content.innerHTML = `<button class="button back-today">← 返回行动中心</button><div class="detail-grid"><section class="panel"><div class="row-between"><span class="badge">${escapeHtml(UI.evidenceLabel(item.evidence_level))}</span><span>${escapeHtml(item.independent_domains)} 个独立域名</span></div><h2>${escapeHtml(item.title)}</h2><h3>事实判断</h3><p>${escapeHtml(judgment?.fact_summary || '等待研判')}</p><h3>因果链</h3><ol>${(judgment?.causal_chain || []).map(value => `<li>${escapeHtml(value)}</li>`).join('') || '<li>等待研判</li>'}</ol><h3>反对证据与不确定性</h3><ul>${(judgment?.uncertainties || []).map(value => `<li>${escapeHtml(value)}</li>`).join('') || '<li>尚未形成</li>'}</ul><h3>时间窗口</h3><p>${(judgment?.horizons || []).map(escapeHtml).join(' · ') || '等待研判'}</p><h3>公开证据</h3><ul class="evidence-list">${evidence}</ul></section><aside><section class="panel"><h2>对你的本地影响</h2><p class="panel-note">以下内容只在本机映射，不发送给外部 AI。</p>${impacts || '<div class="state-panel">没有命中已登记利益。</div>'}</section><section class="panel feedback"><h3>纠正本地判断</h3><div class="row-actions"><button class="button" data-action="mute">静音 7 天</button><button class="button" data-action="lower_importance">降低重要度</button><button class="button" data-action="false_positive">标记误报</button></div></section></aside></div>`;
-  document.querySelector('.back-today').addEventListener('click', () => renderToday().catch(showPageError));
+  document.querySelector('.back-today').addEventListener('click', () => renderRiskHome().catch(showPageError));
   document.querySelectorAll('.confirm-candidate').forEach(button => button.addEventListener('click', event => withBusy(event.currentTarget, '正在写入…', async () => { const probability = Number(button.closest('.candidate').querySelector('.candidate-probability').value); await api(`/api/cognition/candidates/${encodeURIComponent(button.dataset.id)}/confirm`, {method:'POST', body:JSON.stringify({probability})}); showToast('已写入不可变预测账本'); await showClusterDetail(id); }).catch(error => showToast(error.message, 'error'))));
   document.querySelectorAll('.feedback button').forEach(button => button.addEventListener('click', event => withBusy(event.currentTarget, '保存中…', async () => { await api(`/api/cognition/clusters/${encodeURIComponent(id)}/feedback`, {method:'POST', body:JSON.stringify({action:button.dataset.action})}); showToast('本地反馈已保存，不会发送给外部 AI'); }).catch(error => showToast(error.message, 'error'))));
 }
@@ -286,10 +283,9 @@ async function setView(view) {
   state.view = view;
   document.querySelectorAll('.primary-nav').forEach(button => button.classList.toggle('active', button.dataset.view === view));
   showLoading();
-  if (view === 'world') return renderWorld();
   if (view === 'benefit') return renderBenefit();
   if (view === 'system') return renderSystem();
-  return renderToday();
+  return renderRiskHome();
 }
 
 document.querySelectorAll('.primary-nav').forEach(button => button.addEventListener('click', () => setView(button.dataset.view).catch(showPageError)));
@@ -298,7 +294,7 @@ runButton.addEventListener('click', event => CognitionUI.runCognitionWithFeedbac
   apiCall: () => api('/api/cognition/run', {method:'POST', body:'{}'}),
   button: event.currentTarget,
   status: {textContent: '', className: ''},
-  onComplete: notice => renderToday(notice),
+  onComplete: notice => renderRiskHome(notice),
   onFailure: notice => showToast(notice.text, 'error')
 }).catch(error => showToast(error.message, 'error')));
 document.querySelector('#shutdown').addEventListener('click', async () => {
@@ -307,4 +303,4 @@ document.querySelector('#shutdown').addEventListener('click', async () => {
   catch (error) { showToast(error.message, 'error'); }
 });
 
-renderToday().catch(showPageError);
+renderRiskHome().catch(showPageError);

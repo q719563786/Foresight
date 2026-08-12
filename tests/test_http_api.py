@@ -206,43 +206,48 @@ class HttpApiTests(unittest.TestCase):
         with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:
             body = response.read().decode("utf-8")
 
-        self.assertIn("行动中心", body)
+        self.assertIn("风险首页", body)
         self.assertNotIn("https://", body)
 
     def test_home_page_exposes_formal_forecast_and_safe_exit_controls(self):
         with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:
             body = response.read().decode("utf-8")
 
-        self.assertIn("我的利益", body)
+        self.assertIn("我的情况", body)
         self.assertNotIn('data-view="create"', body)
         self.assertIn("安全退出", body)
 
-    def test_home_page_exposes_sensory_center_navigation(self):
+    def test_home_page_is_a_three_entry_risk_cockpit(self):
         with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:
             body = response.read().decode("utf-8")
 
-        self.assertEqual(body.count('class="nav primary-nav'), 4)
+        self.assertEqual(body.count('class="nav primary-nav'), 3)
         self.assertIn('data-view="today"', body)
-        self.assertIn('data-view="world"', body)
         self.assertIn('data-view="benefit"', body)
         self.assertIn('data-view="system"', body)
+        self.assertIn("风险首页", body)
+        self.assertIn("我的情况", body)
+        self.assertIn("设置", body)
+        self.assertNotIn("外部世界", body)
+        self.assertNotIn("来源健康状态", body)
+        self.assertNotIn("关注规则", body)
 
-    def test_home_page_makes_external_information_radar_the_default_view(self):
+    def test_home_page_makes_personal_risk_the_default_view(self):
         with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:
             body = response.read().decode("utf-8")
 
-        self.assertIn("今天先看这三件事", body)
+        self.assertIn("现在有没有风险", body)
         self.assertIn('data-view="today"', body)
         self.assertIn("后台监控", body)
-        self.assertEqual(body.count('class="metric-button'), 3)
-        self.assertIn('data-filter="judge"', body)
-        self.assertIn('data-filter="unread"', body)
-        self.assertIn('id="event-search"', body)
+        self.assertNotIn('class="metric-button', body)
+        self.assertNotIn('data-filter="judge"', body)
+        self.assertNotIn('id="event-search"', body)
         self.assertIn('id="toast"', body)
         self.assertIn('aria-live="polite"', body)
         with urllib.request.urlopen(self.base_url + "/app.js", timeout=2) as response:
             script = response.read().decode("utf-8")
-        self.assertIn("renderToday().catch(showPageError)", script)
+        self.assertIn("renderRiskHome().catch(showPageError)", script)
+        self.assertIn("/api/risk-dashboard", script)
 
     def test_home_page_loads_the_cognition_feedback_behavior(self):
         with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:
