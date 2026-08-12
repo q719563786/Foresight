@@ -585,6 +585,134 @@ class CognitionController:
             result["impacts"].append(item)
         return result
 
+    @staticmethod
+    def _risk_time_window(horizons):
+        text = " ".join(map(str, horizons or ()))
+        if any(word in text for word in ("立即", "今日", "今天")):
+            return "今天"
+        if any(word in text for word in ("7天", "一周")):
+            return "7 天内"
+        if any(word in text for word in ("30天", "一个月", "本月")):
+            return "30 天内"
+        return "更长期"
+
+    def risk_dashboard(self, source_states=None, limit=5):
+        """Project internal judgments into a small personal decision workload."""
+        limit = max(1, min(int(limit), 5))
+        now = self.now().astimezone(timezone.utc)
+        now_text = _iso(now)
+        with self.database.connect() as connection:
+            verifying = connection.execute(
+                "SELECT COUNT(*) FROM event_clusters WHERE status='active' AND needs_judgment=1"
+            ).fetchone()[0]
+            rows = connection.execute(
+                """
+                SELECT p.*,i.name AS interest_name,j.content_json,c.last_seen_at
+                FROM personal_impacts p
+                JOIN event_clusters c ON c.cluster_id=p.cluster_id
+                JOIN judgments j ON j.judgment_id=p.judgment_id
+                LEFT JOIN interest_objects i ON i.object_id=p.interest_id
+                WHERE c.status='active'
+                  AND c.latest_judgment_id=p.judgment_id
+                  AND p.alert_level IN ('L3','L4')
+                  AND p.user_label!='false_positive'
+                  AND (p.muted_until IS NULL OR p.muted_until<=?)
+                ORDER BY p.updated_at DESC
+                """,
+                (now_text,),
+            ).fetchall()
+
+        items = []
+        action_count = 0
+        watch_count = 0
+        for row in rows:
+            judgment = json.loads(row["content_json"] or "{}")
+            candidate = json.loads(row["candidate_json"] or "{}")
+            time_window = self._risk_time_window(judgment.get("horizons"))
+            mode = (
+                "action"
+                if row["alert_level"] == "L4" or time_window in {"今天", "7 天内"}
+                else "watch"
+            )
+            if mode == "action":
+                action_count += 1
+            else:
+                watch_count += 1
+            confidence = float(judgment.get("confidence", 0.0) or 0.0)
+            if confidence >= 0.75:
+                confidence_label = "较高"
+            elif confidence >= 0.45:
+                confidence_label = "中等"
+            else:
+                confidence_label = "仍在核实"
+            up = judgment.get("up_triggers") or []
+            down = judgment.get("down_triggers") or []
+            direction = (
+                "风险上升" if up and not down else "风险缓解" if down and not up else "没有明显变化"
+            )
+            interest_name = plain_text(row["interest_name"] or "已登记利益", 80)
+            fact_summary = plain_text(
+                judgment.get("fact_summary") or "外部变化可能产生影响", 220
+            )
+            action = plain_text(candidate.get("recommended_action"), 240) or (
+                "暂不做不可逆决定；按时间窗口复查。"
+            )
+            items.append(
+                {
+                    "cluster_id": row["cluster_id"],
+                    "impact_id": row["impact_id"],
+                    "mode": mode,
+                    "alert_level": row["alert_level"],
+                    "risk_level": "高风险" if row["alert_level"] == "L4" else "需留意",
+                    "interest_name": interest_name,
+                    "title": f"{interest_name}：{fact_summary}",
+                    "time_window": time_window,
+                    "confidence": confidence_label,
+                    "action": action,
+                    "direction": direction,
+                    "decision_by": plain_text(candidate.get("window_end"), 32) or "按时间窗口复查",
+                    "updated_at": row["updated_at"],
+                    "impact_score": float(row["impact_score"]),
+                }
+            )
+
+        items.sort(
+            key=lambda item: (
+                0 if item["mode"] == "action" else 1,
+                0 if item["alert_level"] == "L4" else 1,
+                -item["impact_score"],
+                item["updated_at"],
+            )
+        )
+        sources = list(source_states or ())
+        enabled = [source for source in sources if source.get("enabled", True)]
+        healthy = [
+            source
+            for source in enabled
+            if source.get("last_status") == "ok" and not source.get("stale", False)
+        ]
+        coverage_gap = bool(enabled) and not healthy
+        if coverage_gap:
+            state = "coverage_gap"
+            summary = "公开信息监控覆盖不足，系统正在重试，暂不能判断目前平稳。"
+        elif action_count:
+            state = "action"
+            summary = f"今天有 {action_count} 件事需要处理，先保护最重要的个人利益。"
+        elif watch_count:
+            state = "watch"
+            summary = f"有 {watch_count} 件事需要继续观察，目前不必仓促行动。"
+        else:
+            state = "stable"
+            summary = "目前没有需要你处理的高等级风险，系统仍在后台监控。"
+        return {
+            "state": state,
+            "summary": summary,
+            "counts": {"action": action_count, "watch": watch_count, "verifying": verifying},
+            "items": items[:limit],
+            "coverage": {"enabled": len(enabled), "healthy": len(healthy)},
+            "generated_at": now_text,
+        }
+
     def feedback(self, cluster_id, action, payload=None):
         payload = payload or {}
         now = self.now().astimezone(timezone.utc)

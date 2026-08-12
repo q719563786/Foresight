@@ -171,6 +171,17 @@ def create_server(host, port, token, services):
                 self._json({"rules": services.external.list_rules()})
             elif path == "/api/cognition/status":
                 self._json(services.cognition_controller.status())
+            elif path == "/api/risk-dashboard":
+                source_states = (
+                    services.external.list_sources()
+                    if services.external is not None
+                    else []
+                )
+                self._json(
+                    services.cognition_controller.risk_dashboard(
+                        source_states, limit=5
+                    )
+                )
             elif path == "/api/cognition/clusters":
                 try:
                     query, limit, offset = self._pagination(parsed, 10)

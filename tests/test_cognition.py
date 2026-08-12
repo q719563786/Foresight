@@ -2,9 +2,10 @@ import hashlib
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
-from yuanjian_app.cognition import CognitionService
+from yuanjian_app.cognition import CognitionController, CognitionService
 from yuanjian_app.database import Database
 
 
@@ -213,6 +214,108 @@ class CognitionServiceTests(unittest.TestCase):
             self.service.list_clusters_page(limit=0)
         with self.assertRaisesRegex(ValueError, "证据"):
             self.service.list_clusters_page(evidence="E9")
+
+
+class RiskDashboardTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.database = Database(Path(self.temporary.name) / "yuanjian.db")
+        self.database.initialize()
+        self.controller = object.__new__(CognitionController)
+        self.controller.database = self.database
+        self.controller.now = lambda: datetime(2026, 8, 12, 8, tzinfo=timezone.utc)
+        with self.database.connect() as connection:
+            connection.execute(
+                "INSERT INTO interest_objects VALUES ('I-CASH','家庭现金流','cashflow',5,'P3','active')"
+            )
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def add_risk(self, number, alert_level, horizons, score=None, pending=False):
+        cluster_id = f"C-{number}"
+        judgment_id = f"J-{number}"
+        timestamp = f"2026-08-12T0{number}:00:00Z"
+        judgment = {
+            "fact_summary": f"第{number}项外部变化可能压缩可用资金",
+            "horizons": horizons,
+            "confidence": 0.82,
+            "up_triggers": ["成本继续上升"],
+            "down_triggers": ["政策撤回"],
+        }
+        candidate = {
+            "recommended_action": f"第{number}项行动：先保留必要现金",
+            "window_end": "2026-09-11",
+        }
+        with self.database.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO event_clusters(
+                    cluster_id,title,summary,first_seen_at,last_seen_at,
+                    evidence_level,evidence_hash,categories_json,status,
+                    needs_judgment,independent_domains,primary_source_count,
+                    latest_judgment_id,created_at,updated_at
+                ) VALUES (?,?,?,?,?,'E3',?,'["finance"]','active',?,2,1,?,?,?)
+                """,
+                (
+                    cluster_id, f"原始新闻标题{number}", "新闻摘要", timestamp,
+                    timestamp, f"hash-{number}", int(pending),
+                    None if pending else judgment_id, timestamp, timestamp,
+                ),
+            )
+            if not pending:
+                connection.execute(
+                    "INSERT INTO judgments VALUES (?,?,?,?,?,?)",
+                    (judgment_id, cluster_id, "local", f"hash-{number}", json.dumps(judgment, ensure_ascii=False), timestamp),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO personal_impacts(
+                        impact_id,cluster_id,judgment_id,interest_id,impact_score,
+                        alert_level,components_json,reason,candidate_json,created_at,updated_at
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        f"P-{number}", cluster_id, judgment_id, "I-CASH",
+                        score if score is not None else number / 10, alert_level,
+                        '{"confidence":0.82}', "内部映射理由",
+                        json.dumps(candidate, ensure_ascii=False), timestamp, timestamp,
+                    ),
+                )
+        return cluster_id
+
+    def test_dashboard_filters_low_risk_prioritizes_action_and_limits_workload(self):
+        self.add_risk(1, "L2", ["7天内"])
+        self.add_risk(2, "L3", ["30天内"], 0.65)
+        self.add_risk(3, "L3", ["7天内"], 0.66)
+        self.add_risk(4, "L4", ["30天内"], 0.90)
+        self.add_risk(5, "L3", ["更长期"], 0.70)
+        self.add_risk(6, "L4", ["立即"], 0.95)
+        self.add_risk(7, "L3", ["30天内"], 0.68)
+
+        dashboard = self.controller.risk_dashboard(
+            [{"enabled": True, "last_status": "ok", "stale": False}], limit=5
+        )
+
+        self.assertEqual(dashboard["state"], "action")
+        self.assertEqual(dashboard["counts"], {"action": 3, "watch": 3, "verifying": 0})
+        self.assertEqual(len(dashboard["items"]), 5)
+        self.assertEqual([item["cluster_id"] for item in dashboard["items"][:3]], ["C-6", "C-4", "C-3"])
+        self.assertTrue(all(item["alert_level"] in {"L3", "L4"} for item in dashboard["items"]))
+        self.assertTrue(all("原始新闻标题" not in item["title"] for item in dashboard["items"]))
+        self.assertEqual(dashboard["items"][0]["action"], "第6项行动：先保留必要现金")
+
+    def test_dashboard_reports_verifying_and_never_calls_blind_monitoring_stable(self):
+        self.add_risk(1, "L3", ["30天内"], pending=True)
+
+        dashboard = self.controller.risk_dashboard(
+            [{"enabled": True, "last_status": "error", "stale": True}]
+        )
+
+        self.assertEqual(dashboard["state"], "coverage_gap")
+        self.assertEqual(dashboard["counts"], {"action": 0, "watch": 0, "verifying": 1})
+        self.assertIn("覆盖不足", dashboard["summary"])
+        self.assertEqual(dashboard["items"], [])
 
 
 if __name__ == "__main__":

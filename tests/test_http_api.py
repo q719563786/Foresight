@@ -579,6 +579,29 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(marked["updated"], 1)
         self.assertEqual(self.get_json("/api/notifications?status=unread")["total"], 0)
 
+    def test_risk_dashboard_returns_decisions_without_raw_news(self):
+        self.post_json(
+            "/api/external/sources",
+            {
+                "source_id": "S-RISK",
+                "name": "公开测试源",
+                "kind": "rss",
+                "endpoint": "https://example.com/feed",
+            },
+        )
+
+        dashboard = self.get_json("/api/risk-dashboard")
+
+        self.assertEqual(
+            set(dashboard),
+            {"state", "summary", "counts", "items", "coverage", "generated_at"},
+        )
+        self.assertEqual(dashboard["coverage"], {"enabled": 1, "healthy": 0})
+        serialized = json.dumps(dashboard, ensure_ascii=False)
+        self.assertNotIn("canonical_url", serialized)
+        self.assertNotIn("last_error", serialized)
+        self.assertNotIn("watch_rules", serialized)
+
     def test_invalid_pagination_returns_bad_request(self):
         request = urllib.request.Request(
             self.base_url + "/api/cognition/clusters?limit=0",
