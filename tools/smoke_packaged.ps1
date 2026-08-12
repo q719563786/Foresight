@@ -7,12 +7,14 @@ $ErrorActionPreference = "Stop"
 $headlessEnvironment = "YUANJIAN_HEADLESS"
 $headlessValue = "1"
 $defaultView = "today"
+$riskCockpit = $true
 
 if ($Describe) {
     [pscustomobject]@{
         HeadlessEnvironment = $headlessEnvironment
         HeadlessValue = $headlessValue
         DefaultView = $defaultView
+        RiskCockpit = $riskCockpit
     } | ConvertTo-Json -Compress
     exit 0
 }
@@ -22,7 +24,7 @@ if ([string]::IsNullOrWhiteSpace($ExePath)) {
 }
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$smokeRoot = Join-Path $projectRoot "smoke-runtime-v06"
+$smokeRoot = Join-Path $projectRoot "smoke-runtime-v08"
 
 if (Test-Path -LiteralPath $smokeRoot) {
     throw "Smoke target already exists"
@@ -61,7 +63,10 @@ try {
     $runtime = Get-Content -Raw -Encoding UTF8 -LiteralPath $runtimeFile | ConvertFrom-Json
     $headers = @{ "X-YuanJian-Token" = $runtime.token }
     $homeResponse = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 -Uri "http://127.0.0.1:$($runtime.port)/"
-    if ($homeResponse.StatusCode -ne 200 -or -not $homeResponse.Content.Contains('data-view="today"')) {
+    $hasDefaultView = $homeResponse.Content.Contains('data-view="today"')
+    $hasRiskCockpitScript = $homeResponse.Content.Contains('risk_ui.js')
+    $hasLegacyWorldView = $homeResponse.Content.Contains('data-view="world"')
+    if ($homeResponse.StatusCode -ne 200 -or -not $hasDefaultView -or -not $hasRiskCockpitScript -or $hasLegacyWorldView) {
         throw "Packaged local UI did not pass the home-page check"
     }
     if ($homeResponse.Content.Contains("https://")) {
@@ -90,6 +95,7 @@ try {
         HomeStatus = $homeResponse.StatusCode
         RemoteScripts = $false
         DefaultView = $defaultView
+        RiskCockpit = $riskCockpit
         LocalFallback = $cognition.provider
         SecondInstanceExitCode = $second.ExitCode
         Shutdown = $shutdown.status
