@@ -129,6 +129,9 @@ def create_server(host, port, token, services):
             if path == "/ui_core.js":
                 self._static("ui_core.js", "text/javascript; charset=utf-8")
                 return
+            if path == "/risk_ui.js":
+                self._static("risk_ui.js", "text/javascript; charset=utf-8")
+                return
             if path == "/styles.css":
                 self._static("styles.css", "text/css; charset=utf-8")
                 return

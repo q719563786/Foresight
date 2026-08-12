@@ -12,6 +12,7 @@ class CognitionFrontendTests(unittest.TestCase):
         / "cognition_ui.js"
     )
     ui_core_path = module_path.with_name("ui_core.js")
+    risk_ui_path = module_path.with_name("risk_ui.js")
 
     def run_node(self, body):
         script = f"""
@@ -44,6 +45,46 @@ const ui = require({str(self.ui_core_path)!r});
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def run_risk_ui(self, body):
+        script = f"""
+const assert = require('node:assert/strict');
+const ui = require({str(self.risk_ui_path)!r});
+{body}
+"""
+        result = subprocess.run(
+            ["node", "-e", script],
+            text=True,
+            encoding="utf-8",
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_risk_cockpit_labels_and_workload_are_small_and_stable(self):
+        self.run_risk_ui(
+            """
+assert.equal(ui.overviewLabel('action'), '需要行动');
+assert.equal(ui.overviewLabel('watch'), '继续观察');
+assert.equal(ui.overviewLabel('stable'), '目前平稳');
+assert.equal(ui.overviewLabel('coverage_gap'), '监控覆盖不足');
+assert.deepEqual(ui.counts({counts:{action:2, watch:3, verifying:9}}), [
+  {key:'action', value:2, label:'现在要处理'},
+  {key:'watch', value:3, label:'继续观察'},
+  {key:'verifying', value:9, label:'系统核实中'}
+]);
+const items = [
+  {cluster_id:'low', alert_level:'L2', mode:'action', impact_score:1},
+  {cluster_id:'watch', alert_level:'L3', mode:'watch', impact_score:.9},
+  {cluster_id:'a', alert_level:'L4', mode:'action', impact_score:.8},
+  {cluster_id:'b', alert_level:'L3', mode:'action', impact_score:.7},
+  {cluster_id:'c', alert_level:'L3', mode:'watch', impact_score:.6},
+  {cluster_id:'d', alert_level:'L3', mode:'watch', impact_score:.5},
+  {cluster_id:'e', alert_level:'L3', mode:'watch', impact_score:.4}
+];
+assert.deepEqual(ui.visibleRisks(items).map(item => item.cluster_id), ['a','b','watch','c','d']);
+"""
+        )
 
     def test_user_facing_labels_query_and_time_are_stable(self):
         self.run_ui_core(

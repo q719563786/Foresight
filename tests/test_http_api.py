@@ -268,6 +268,19 @@ class HttpApiTests(unittest.TestCase):
         self.assertIn("evidenceLabel", helper)
         self.assertNotIn("https://", helper)
 
+    def test_home_page_loads_packaged_risk_cockpit_helper(self):
+        with urllib.request.urlopen(self.base_url + "/", timeout=2) as response:
+            home = response.read().decode("utf-8")
+
+        self.assertIn('<script src="/risk_ui.js"></script>', home)
+        self.assertLess(home.index('/risk_ui.js'), home.index('/app.js'))
+        with urllib.request.urlopen(self.base_url + "/risk_ui.js", timeout=2) as response:
+            helper = response.read().decode("utf-8")
+
+        self.assertEqual(response.status, 200)
+        self.assertIn("visibleRisks", helper)
+        self.assertNotIn("https://", helper)
+
     def test_forecast_api_returns_json(self):
         request = urllib.request.Request(
             self.base_url + "/api/forecasts",
